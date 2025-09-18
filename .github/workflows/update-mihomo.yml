@@ -1,0 +1,123 @@
+name: Update mihomo
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * *"
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "README.md"
+      - ".github/workflows/delete-old-workflows.yml"
+      - ".github/workflows/update-adguardhome.yml"
+      - ".github/workflows/update-dashboard.yml"
+      - ".github/workflows/update-singbox.yml"
+
+jobs:
+  Update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v5
+
+      - name: Set variables
+        run: |
+          echo "download_url=https://github.com/MetaCubeX/mihomo/releases/download" >> ${GITHUB_ENV}
+          echo "meta_version=$(curl -sSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.tag_name')" >> ${GITHUB_ENV}
+          echo "meta_time=$(curl -sSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.created_at' | xargs -I {} date -d '{} +8 hours' '+%Y-%m-%d')" >> ${GITHUB_ENV}
+          echo "alpha_version=$(curl -sSL https://api.github.com/repos/MetaCubeX/mihomo/releases | jq -r '[.[] | select(.tag_name=="Prerelease-Alpha")][0].assets[].name' | perl -ne '/(alpha\-)([^.]+)/ && print "$1$2\n"' | head -n 1)" >> ${GITHUB_ENV}
+          echo "alpha_time=$(curl -sSL https://api.github.com/repos/MetaCubeX/mihomo/releases | jq -r '[.[] | select(.tag_name=="Prerelease-Alpha")][0].created_at' | xargs -I {} date -d '{} +8 hours' '+%Y-%m-%d')" >> ${GITHUB_ENV}
+        shell: bash
+
+      - name: Compare `mihomo` versions with current release
+        run: |
+          current_body=$(curl -sSL "https://api.github.com/repos/${{ github.repository }}/releases/tags/mihomo" | jq -r '.body // ""')
+          archs=(
+            "mihomo Meta|${meta_version}|${meta_time}"
+            "mihomo Alpha|${alpha_version}|${alpha_time}"
+          )
+          for arch in "${archs[@]}"; do
+            IFS="|" read -r name version time <<< "$arch"
+            var_name="${name// /_}_skip_update"
+            if echo "${current_body}" | grep -q "${name}.*${version}.*${time}"; then
+              echo "当前 ${name} 版本已是最新版本 ${version}，无需更新"
+              eval "${var_name}=true"
+            else
+              echo "当前 ${name} 版本较低，需要更新最新版本至 ${version}"
+              eval "${var_name}=false"
+            fi
+            eval "value=\$${var_name}"
+            echo "${var_name}=${value}" >> ${GITHUB_ENV}
+          done
+
+      - name: Download `mihomo Meta` files
+        if: ${{ env.mihomo_Meta_skip_update != 'true' }}
+        run: |
+          # Linux
+          mkdir -p ./tmp-meta/ ./mihomo/
+          linux_old_name=(amd64-v1 amd64-v3 armv5 armv6 armv7 arm64 mips-softfloat mipsle-hardfloat mipsle-softfloat)
+          linux_new_name=(amd64v1 amd64v3 armv5 armv6 armv7 armv8 mips-softfloat mipsle-hardfloat mipsle-softfloat)
+          for i in "${!linux_old_name[@]}"; do
+            curl -L "${download_url}/${meta_version}/mihomo-linux-${linux_old_name[i]}-${meta_version}.gz" | gunzip -c > ./tmp-meta/CrashCore
+            chmod +x ./tmp-meta/CrashCore
+            tar --no-same-owner -czf "./mihomo/mihomo-meta-linux-${linux_new_name[i]}.tar.gz" -C ./tmp-meta/ CrashCore
+          done
+
+          # Windows
+          windows_old_name=(amd64-v1 amd64-v3 arm64)
+          windows_new_name=(amd64v1 amd64v3 arm64)
+          for j in "${!windows_old_name[@]}"; do
+            mkdir -p "./tmp-meta/meta_windows_${windows_old_name[j]}"
+            wget -P "./tmp-meta/meta_windows_${windows_old_name[j]}/" "${download_url}/${meta_version}/mihomo-windows-${windows_old_name[j]}-${meta_version}.zip"
+            unzip -o "./tmp-meta/meta_windows_${windows_old_name[j]}/mihomo-windows-${windows_old_name[j]}-${meta_version}.zip" -d "./tmp-meta/meta_windows_${windows_old_name[j]}/"
+            mv -f "./tmp-meta/meta_windows_${windows_old_name[j]}/mihomo-windows-${windows_old_name[j]}.exe" "./mihomo/mihomo-meta-windows-${windows_new_name[j]}.exe"
+          done
+          rm -rf ./tmp-meta*
+
+      - name: Download `mihomo Alpha` files
+        if: ${{ env.mihomo_Alpha_skip_update != 'true' }}
+        run: |
+          # Linux
+          mkdir -p ./tmp-alpha/ ./mihomo/
+          linux_old_name=(amd64-v1 amd64-v3 armv5 armv6 armv7 arm64 mips-softfloat mipsle-hardfloat mipsle-softfloat)
+          linux_new_name=(amd64v1 amd64v3 armv5 armv6 armv7 armv8 mips-softfloat mipsle-hardfloat mipsle-softfloat)
+          for i in "${!linux_old_name[@]}"; do
+            curl -L "${download_url}/Prerelease-Alpha/mihomo-linux-${linux_old_name[i]}-${alpha_version}.gz" | gunzip -c > ./tmp-alpha/CrashCore
+            chmod +x ./tmp-alpha/CrashCore
+            tar --no-same-owner -czf "./mihomo/mihomo-alpha-linux-${linux_new_name[i]}.tar.gz" -C ./tmp-alpha/ CrashCore
+          done
+
+          # Windows
+          windows_old_name=(amd64-v1 amd64-v3 arm64)
+          windows_new_name=(amd64v1 amd64v3 arm64)
+          for j in "${!windows_old_name[@]}"; do
+            mkdir -p "./tmp-alpha/alpha_windows_${windows_old_name[j]}"
+            wget -P "./tmp-alpha/alpha_windows_${windows_old_name[j]}/" "${download_url}/Prerelease-Alpha/mihomo-windows-${windows_old_name[j]}-${alpha_version}.zip"
+            unzip -o "./tmp-alpha/alpha_windows_${windows_old_name[j]}/mihomo-windows-${windows_old_name[j]}-${alpha_version}.zip" -d "./tmp-alpha/alpha_windows_${windows_old_name[j]}/"
+            mv -f "./tmp-alpha/alpha_windows_${windows_old_name[j]}/mihomo-windows-${windows_old_name[j]}.exe" "./mihomo/mihomo-alpha-windows-${windows_new_name[j]}.exe"
+          done
+          rm -rf ./tmp-alpha*
+
+      - name: Check if `mihomo` files exist
+        run: |
+          if ls ./mihomo/* >/dev/null 2>&1; then
+            echo "mihomo 文件夹内存在新内核文件，需要上传"
+            echo "mihomo_exist=true" >> ${GITHUB_ENV}
+          else
+            echo "mihomo 文件夹内没有新内核文件，无需上传"
+            echo "mihomo_exist=false" >> ${GITHUB_ENV}
+          fi
+
+      - name: Release and upload `mihomo` assets
+        if: ${{ env.mihomo_exist == 'true' }}
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          release_name: mihomo
+          tag: mihomo
+          overwrite: true
+          body: |
+            更新 [mihomo Meta 版](https://github.com/MetaCubeX/mihomo/tree/Meta)至 ${{ env.meta_version }}，发布于 ${{ env.meta_time }}
+            更新 [mihomo Alpha 版](https://github.com/MetaCubeX/mihomo/tree/Alpha)至 ${{ env.alpha_version }}，发布于 ${{ env.alpha_time }}
+          file_glob: true
+          file: ./mihomo/*
