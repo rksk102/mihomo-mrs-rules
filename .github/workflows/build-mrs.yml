@@ -1,11 +1,33 @@
-name: "Build MRS from TXT"
+name: "Build MRS (keep directory structure)"
 
 on:
+  # 可选：当合并规则工作流完成后自动运行（把名字替换成你实际的合并工作流 name）
+  workflow_run:
+    workflows: ["Merge Rule Sets"]  # 比如 "5. Merge Rule Sets (Smart Copy)"，请改成你的实际名称
+    types: [completed]
+
+  # 也允许手动触发，以及在直接修改 rulesets/ 时触发
+  workflow_dispatch:
+    inputs:
+      mihomo_url:
+        description: "覆盖下载URL（可选），默认用本仓库 tag=mihomo 的 amd64v3 包"
+        required: false
+        type: string
+      verify_sha256:
+        description: "是否校验 SHA256（需要 Release 提供 SHA256SUMS.txt）"
+        required: true
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+      output_dir:
+        description: "输出目录（默认 mrs-rules）"
+        required: false
+        default: "mrs-rules"
+        type: string
   push:
     branches: [ main ]
     paths:
-      - 'rulesets/**'
-  workflow_dispatch:
+      - "rulesets/**"
 
 permissions:
   contents: write
@@ -15,55 +37,138 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 可选：填入你认可的 tools/mrs-generator 的 SHA256，开启完整性校验
-  MRS_GEN_SHA256: ""  # 例如: "abcd1234..."; 留空则不校验
+  TZ: Asia/Shanghai
+  # 默认下载你仓库 release/tag=mihomo 的打包 mihomo（amd64v3）
+  DEFAULT_MIHOMO_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/mihomo-meta-linux-amd64v3.tar.gz
+  DEFAULT_SHA256_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/SHA256SUMS.txt
+  OUTPUT_DIR: ${{ inputs.output_dir != '' && inputs.output_dir || 'mrs-rules' }}
 
 jobs:
-  build-mrs:
+  build:
+    # 若来源是 workflow_run，仅在上游成功时继续，避免失败链
+    if: |
+      github.event_name != 'workflow_run' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify tool exists (and integrity if configured)
+      - name: Prepare tools dir
+        run: mkdir -p tools
+
+      - name: Download mihomo tarball
+        id: dl
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -x "tools/mrs-generator" ]; then
-            echo "::error::tools/mrs-generator not found or not executable."
-            echo "提示：先在 Actions 运行 'Get mrs-generator (via Go proxy)'，或手动上传 tools/mrs-generator。"
+          URL="${{ inputs.mihomo_url != '' && inputs.mihomo_url || env.DEFAULT_MIHOMO_URL }}"
+          echo "Download URL: $URL"
+          curl -fSL "$URL" -o tools/mihomo.tar.gz
+          echo "download_ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tarball SHA256 (optional)
+        if: steps.dl.outputs.download_ok == 'true' && inputs.verify_sha256 == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fSL "$DEFAULT_SHA256_URL" -o tools/SHA256SUMS.txt
+          calc=$(sha256sum tools/mihomo.tar.gz | awk '{print $1}')
+          if ! awk -v f="mihomo-meta-linux-amd64v3.tar.gz" -v c="$calc" '$2==f && $1==c {ok=1} END{exit !(ok)}' tools/SHA256SUMS.txt; then
+            echo "::error::SHA256 mismatch for mihomo tar.gz"
+            echo "calc: $calc"
+            grep 'mihomo-meta-linux-amd64v3.tar.gz' tools/SHA256SUMS.txt || true
             exit 1
           fi
-          if [ -n "${MRS_GEN_SHA256}" ]; then
-            echo "Verifying tools/mrs-generator SHA256..."
-            calc=$(sha256sum tools/mrs-generator | awk '{print $1}')
-            if [ "$calc" != "${MRS_GEN_SHA256}" ]; then
-              echo "::error::SHA256 mismatch! expected=${MRS_GEN_SHA256}, got=${calc}"
-              exit 1
+
+      - name: Extract mihomo and make executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf tools/mihomo.tar.gz -C tools/
+          # 包内文件名一般是 CrashCore
+          if [ -f tools/CrashCore ]; then
+            mv tools/CrashCore tools/mihomo
+          fi
+          if [ ! -f tools/mihomo ]; then
+            echo "::error::mihomo binary not found in tarball."
+            ls -l tools
+            exit 1
+          fi
+          chmod +x tools/mihomo
+          tools/mihomo -v || true
+
+      - name: Convert TXT to MRS (preserve directory structure)
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          OUTPUT_DIR="${OUTPUT_DIR}"
+
+          # 路径优先判断 + 内容回退检测
+          path_hint_behavior() {
+            local f="$1" lower
+            lower="$(echo "$f" | tr '[:upper:]' '[:lower:]')"
+            if echo "$lower" | grep -Eq '/ip|/ipcidr|(^|/)ip[^/]*'; then
+              echo ipcidr; return
             fi
+            if echo "$lower" | grep -Eq '/domain|/host|/dns'; then
+              echo domain; return
+            fi
+            echo ""  # 无路径提示，交由内容检测
+          }
+
+          detect_behavior_by_content() {
+            local f="$1"
+            local total=0 domain_like=1 ipcidr_like=1 line
+            while IFS= read -r line; do
+              line="${line%%#*}"; line="${line%%!*}"
+              line="$(echo "$line" | sed 's/^[[:space:]]\\+//; s/[[:space:]]\\+$//')"
+              [ -z "$line" ] && continue
+              total=$((total+1))
+              echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\\.)+[A-Za-z0-9-]+$|^\\+\\.[A-Za-z0-9.-]+$|^\\*[A-Za-z0-9.-]+$' || domain_like=0
+              echo "$line" | grep -Eq '^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$' || ipcidr_like=0
+            done < "$f"
+            if [ "$total" -eq 0 ]; then echo domain; return; fi
+            if [ "$domain_like" -eq 1 ] && [ "$ipcidr_like" -eq 0 ]; then echo domain; return; fi
+            if [ "$ipcidr_like" -eq 1 ] && [ "$domain_like" -eq 0 ]; then echo ipcidr; return; fi
+            echo classical
+          }
+
+          changed=0
+          while IFS= read -r -d '' in_file; do
+            # 生成输出路径：rulesets/xxx/yyy.txt -> ${OUTPUT_DIR}/xxx/yyy.mrs
+            out_file="${in_file#rulesets/}"
+            out_file="${OUTPUT_DIR}/${out_file%.txt}.mrs"
+            mkdir -p "$(dirname "$out_file")"
+
+            # 选择行为
+            beh="$(path_hint_behavior "$in_file")"
+            if [ -z "$beh" ]; then
+              beh="$(detect_behavior_by_content "$in_file")"
+            fi
+
+            echo "Convert: $in_file -> $out_file (behavior=$beh)"
+            tools/mihomo convert-ruleset "$beh" text "$in_file" "$out_file"
+            changed=1
+          done < <(find rulesets -type f -name "*.txt" -print0)
+
+          if [ "$changed" -eq 0 ]; then
+            echo "No .txt found under rulesets/. Nothing to do."
+            exit 0
           fi
 
-      - name: Convert TXT to MRS
+      - name: Commit and push MRS outputs
         shell: bash
         run: |
           set -euo pipefail
-          find rulesets -type f -name "*.txt" | while read -r in_file; do
-            out_file=$(echo "$in_file" | sed 's|^rulesets/|mrs-rules/|' | sed 's|\.txt$|.mrs|')
-            echo "Converting: $in_file  ==>  $out_file"
-            mkdir -p "$(dirname "$out_file")"
-            ./tools/mrs-generator -i "$in_file" -o "$out_file"
-          done
-
-      - name: Commit and Push MRS files
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z $(git status --porcelain mrs-rules) ]]; then
-            echo "No changes to MRS files. Nothing to commit."
+          if [[ -z $(git status --porcelain "${OUTPUT_DIR}") ]]; then
+            echo "No changes in ${OUTPUT_DIR}/."
             exit 0
           fi
           git config user.name 'GitHub Actions Bot'
           git config user.email 'actions@github.com'
-          git add mrs-rules/
-          git commit -m "chore(mrs): Auto-build MRS files"
+          git add "${OUTPUT_DIR}/"
+          git commit -m "chore(mrs): convert TXT->MRS keeping directory structure"
           git push
