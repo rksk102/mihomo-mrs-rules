@@ -22,7 +22,7 @@ env:
   SYNC_WORKFLOW_FILE: sync-from-repoA.yml
   BUILD_WORKFLOW_FILE: build-mrs.yml
   # 等待时间（秒），30 分钟 = 1800 秒
-  WAIT_SECONDS: "1800"
+  WAIT_SECONDS: "180"
 
 jobs:
   orchestrate:
