@@ -3,7 +3,7 @@ name: "Orchestrate: Sync from RepoA"
 on:
   # 每天固定时间运行（UTC）。示例：每天 18:00 UTC（即北京时间次日 02:00）
   schedule:
-    - cron: "0 18 * * *"
+    - cron: "0 22 * * *"
   # 允许手动触发以立即测试
   workflow_dispatch:
 
