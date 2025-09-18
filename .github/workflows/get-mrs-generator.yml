@@ -1,0 +1,94 @@
+name: "Get mrs-generator (via Go proxy)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_to_repo:
+        description: "Commit the built binary to tools/ ?"
+        required: true
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: get-mrs-generator
+  cancel-in-progress: true
+
+jobs:
+  build-tool:
+    runs-on: ubuntu-latest
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install mrs-generator from Go module proxy
+        id: inst
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 依次尝试多个可能的模块路径版本
+          candidates=(
+            "github.com/MetaCubeX/mrs-generator@v1.1.0"
+            "github.com/MetaCubeX/mrs-generator@latest"
+            "github.com/KOP-XIAO/mrs-generator@latest"
+            "github.com/Mihomo-Rules/mrs-generator@latest"
+          )
+          ok=""
+          for mod in "${candidates[@]}"; do
+            echo "Trying: $mod"
+            if go install "$mod"; then
+              ok="$mod"
+              break
+            fi
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::Failed to install mrs-generator from Go proxy with all candidates."
+            exit 1
+          fi
+          echo "ok_mod=$ok" >> "$GITHUB_OUTPUT"
+          # 将 $GOPATH/bin 加入 PATH
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          echo "Installed from: $ok"
+
+      - name: Show binary info
+        shell: bash
+        run: |
+          which mrs-generator
+          file "$(which mrs-generator)" || true
+          mrs-generator -h || true
+
+      - name: Upload artifact (for manual download)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mrs-generator-linux-amd64
+          path: ${{ env.HOME }}/go/bin/mrs-generator
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Commit into tools/ (optional)
+        if: ${{ inputs.commit_to_repo == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tools
+          cp "$HOME/go/bin/mrs-generator" tools/mrs-generator
+          chmod +x tools/mrs-generator
+          git config user.name 'GitHub Actions Bot'
+          git config user.email 'actions@github.com'
+          if git diff --quiet -- tools/mrs-generator 2>/dev/null; then
+            echo "No changes to tools/mrs-generator"
+            exit 0
+          fi
+          git add tools/mrs-generator
+          git commit -m "chore(tool): add mrs-generator (built via Go proxy: ${{ steps.inst.outputs.ok_mod }})"
+          git push
