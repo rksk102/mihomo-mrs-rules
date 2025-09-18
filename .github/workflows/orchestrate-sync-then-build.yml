@@ -1,4 +1,4 @@
-name: "Orchestrate: Sync from RepoA then Build MRS (daily)"
+name: "Orchestrate: Sync from RepoA"
 
 on:
   # 每天固定时间运行（UTC）。示例：每天 18:00 UTC（即北京时间次日 02:00）
