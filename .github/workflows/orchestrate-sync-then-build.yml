@@ -1,0 +1,73 @@
+name: "Orchestrate: Sync from RepoA then Build MRS (daily)"
+
+on:
+  # 每天固定时间运行（UTC）。示例：每天 18:00 UTC（即北京时间次日 02:00）
+  schedule:
+    - cron: "0 18 * * *"
+  # 允许手动触发以立即测试
+  workflow_dispatch:
+
+permissions:
+  actions: write   # 允许通过 API 触发其他工作流
+  contents: read
+
+concurrency:
+  group: orchestrate-sync-then-build
+  cancel-in-progress: true
+
+env:
+  # 调用 workflow_dispatch 时使用的分支（按需修改）
+  DISPATCH_REF: main
+  # 文件名必须与目标工作流文件名一致
+  SYNC_WORKFLOW_FILE: sync-from-repoA.yml
+  BUILD_WORKFLOW_FILE: build-mrs.yml
+  # 等待时间（秒），30 分钟 = 1800 秒
+  WAIT_SECONDS: "1800"
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show plan
+        run: |
+          echo "This job will:"
+          echo "1) Dispatch $SYNC_WORKFLOW_FILE on ref=${DISPATCH_REF}"
+          echo "2) Wait ${WAIT_SECONDS} seconds"
+          echo "3) Dispatch $BUILD_WORKFLOW_FILE on ref=${DISPATCH_REF}"
+
+      - name: Trigger sync-from-repoA.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_FILE: ${{ env.SYNC_WORKFLOW_FILE }}
+          REF: ${{ env.DISPATCH_REF }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching $WORKFLOW_FILE on $REPO@${REF} ..."
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            -d "{\"ref\":\"${REF}\",\"inputs\":{}}"
+          echo "Dispatched."
+
+      - name: Wait 30 minutes
+        run: |
+          echo "Sleeping ${WAIT_SECONDS}s..."
+          sleep "${WAIT_SECONDS}"
+
+      - name: Trigger build-mrs.yml
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_FILE: ${{ env.BUILD_WORKFLOW_FILE }}
+          REF: ${{ env.DISPATCH_REF }}
+        run: |
+          set -euo pipefail
+          echo "Dispatching $WORKFLOW_FILE on $REPO@${REF} ..."
+          curl -sS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            -d "{\"ref\":\"${REF}\",\"inputs\":{}}"
+          echo "Dispatched."
