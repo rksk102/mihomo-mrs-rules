@@ -3,8 +3,12 @@ name: "Get mrs-generator (via Go proxy)"
 on:
   workflow_dispatch:
     inputs:
+      candidates:
+        description: "Go module candidates (space-separated), e.g.: github.com/MetaCubeX/mrs-generator@v1.1.0 github.com/MetaCubeX/mrs-generator@latest"
+        required: false
+        default: "github.com/MetaCubeX/mrs-generator@v1.1.0 github.com/MetaCubeX/mrs-generator@latest"
       commit_to_repo:
-        description: "Commit the built binary to tools/ ?"
+        description: "Commit the built binary into tools/?"
         required: true
         default: "true"
         type: choice
@@ -31,20 +35,15 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install mrs-generator from Go module proxy
+      - name: Try install via Go proxy
         id: inst
         shell: bash
         run: |
           set -euo pipefail
-          # 依次尝试多个可能的模块路径版本
-          candidates=(
-            "github.com/MetaCubeX/mrs-generator@v1.1.0"
-            "github.com/MetaCubeX/mrs-generator@latest"
-            "github.com/KOP-XIAO/mrs-generator@latest"
-            "github.com/Mihomo-Rules/mrs-generator@latest"
-          )
           ok=""
-          for mod in "${candidates[@]}"; do
+          # 读取 candidates 输入为数组
+          read -r -a arr <<< "${{ inputs.candidates }}"
+          for mod in "${arr[@]}"; do
             echo "Trying: $mod"
             if go install "$mod"; then
               ok="$mod"
@@ -52,11 +51,10 @@ jobs:
             fi
           done
           if [ -z "$ok" ]; then
-            echo "::error::Failed to install mrs-generator from Go proxy with all candidates."
+            echo "::error::Failed to install mrs-generator from Go proxy with given candidates."
             exit 1
           fi
           echo "ok_mod=$ok" >> "$GITHUB_OUTPUT"
-          # 将 $GOPATH/bin 加入 PATH
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           echo "Installed from: $ok"
 
@@ -65,7 +63,8 @@ jobs:
         run: |
           which mrs-generator
           file "$(which mrs-generator)" || true
-          mrs-generator -h || true
+          ls -l "$(which mrs-generator)"
+          sha256sum "$(which mrs-generator)" || shasum -a 256 "$(which mrs-generator)"
 
       - name: Upload artifact (for manual download)
         uses: actions/upload-artifact@v4
