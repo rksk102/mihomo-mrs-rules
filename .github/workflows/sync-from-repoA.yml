@@ -1,0 +1,155 @@
+name: "Sync folder from Repo A (no PAT, no MRS)"
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # 每小时运行一次，可按需调整
+  workflow_dispatch:
+    inputs:
+      a_owner:
+        description: "Repo A owner（覆盖 env.A_OWNER）"
+        required: false
+        type: string
+      a_repo:
+        description: "Repo A name（覆盖 env.A_REPO）"
+        required: false
+        type: string
+      a_ref:
+        description: "Repo A branch/tag（覆盖 env.A_REF）"
+        required: false
+        type: string
+      a_path:
+        description: "Repo A 根目录下要同步的文件夹（覆盖 env.A_PATH）"
+        required: false
+        type: string
+      target_dir:
+        description: "在本仓库的目标目录（默认 rulesets）"
+        required: false
+        default: "rulesets"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-from-repoA
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Shanghai
+  # ===== 默认的仓库A信息（按需改成你的实际值）=====
+  A_OWNER: your-name-or-org     # 仓库A所有者
+  A_REPO: rules-Repository      # 仓库A名称
+  A_REF: main                   # 仓库A分支/标签
+  A_PATH: merged-rules          # 仓库A根目录下要同步的文件夹名（例如 merged-rules）
+  # ===== 仓库B中的目标目录根 =====
+  TARGET_DIR_DEFAULT: rulesets  # 同步到本仓库哪个目录（默认 rulesets）
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo B (full history for rebase)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve inputs and configure Git
+        id: cfg
+        shell: bash
+        run: |
+          set -euo pipefail
+          A_OWNER="${{ inputs.a_owner != '' && inputs.a_owner || env.A_OWNER }}"
+          A_REPO="${{ inputs.a_repo  != '' && inputs.a_repo  || env.A_REPO  }}"
+          A_REF="${{ inputs.a_ref   != '' && inputs.a_ref   || env.A_REF   }}"
+          A_PATH="${{ inputs.a_path  != '' && inputs.a_path  || env.A_PATH  }}"
+          TARGET_DIR="${{ inputs.target_dir != '' && inputs.target_dir || env.TARGET_DIR_DEFAULT }}"
+
+          echo "A_OWNER=$A_OWNER"     >> "$GITHUB_OUTPUT"
+          echo "A_REPO=$A_REPO"       >> "$GITHUB_OUTPUT"
+          echo "A_REF=$A_REF"         >> "$GITHUB_OUTPUT"
+          echo "A_PATH=$A_PATH"       >> "$GITHUB_OUTPUT"
+          echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_OUTPUT"
+
+          git config user.name 'GitHub Actions Bot'
+          git config user.email 'actions@github.com'
+
+      - name: Rebase Repo B to latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          git fetch origin "$BRANCH"
+          git checkout "$BRANCH"
+          git pull --rebase origin "$BRANCH"
+
+      - name: Sparse checkout Repo A folder (anonymous)
+        shell: bash
+        run: |
+          set -euo pipefail
+          A_OWNER="${{ steps.cfg.outputs.A_OWNER }}"
+          A_REPO="${{ steps.cfg.outputs.A_REPO }}"
+          A_REF="${{ steps.cfg.outputs.A_REF }}"
+          A_PATH="${{ steps.cfg.outputs.A_PATH }}"
+
+          echo "Sparse clone https://github.com/${A_OWNER}/${A_REPO}.git @ ${A_REF}, path=${A_PATH}"
+          rm -rf external && mkdir -p external
+          cd external
+          git init a_src
+          cd a_src
+          git remote add origin "https://github.com/${A_OWNER}/${A_REPO}.git"
+          git config core.sparseCheckout true
+          git sparse-checkout init --cone
+          git sparse-checkout set "${A_PATH}"
+          git fetch --depth=1 origin "${A_REF}"
+          git checkout FETCH_HEAD
+
+          if [ ! -d "${A_PATH}" ]; then
+            echo "::warning::Path '${A_PATH}' not found in Repo A (${A_OWNER}/${A_REPO}@${A_REF}). Nothing to sync."
+            exit 0
+          fi
+          echo "Fetched files under ${A_PATH}:"
+          find "${A_PATH}" -type f | head -n 50 || true
+
+      - name: Mirror folder into Repo B
+        shell: bash
+        run: |
+          set -euo pipefail
+          A_PATH="${{ steps.cfg.outputs.A_PATH }}"
+          TARGET_DIR="${{ steps.cfg.outputs.TARGET_DIR }}"
+
+          mkdir -p "${TARGET_DIR}"
+          # 用 rsync 镜像同步：保持结构、删除目标中已不存在的文件
+          rsync -a --delete "external/a_src/${A_PATH}/" "${TARGET_DIR}/"
+
+      - name: Commit changes (if any)
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_DIR="${{ steps.cfg.outputs.TARGET_DIR }}"
+          if git diff --quiet "${TARGET_DIR}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to commit."
+            exit 0
+          fi
+          git add "${TARGET_DIR}/"
+          git commit -m "chore(sync): mirror ${{
+            steps.cfg.outputs.A_OWNER }}/${{ steps.cfg.outputs.A_REPO }}:${{
+            steps.cfg.outputs.A_REF }}/${{ steps.cfg.outputs.A_PATH }} -> ${TARGET_DIR}/"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push with rebase retry
+        if: steps.commit.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          if git push origin "$BRANCH"; then
+            exit 0
+          fi
+          echo "Non-fast-forward, rebasing and retrying..."
+          git pull --rebase origin "$BRANCH"
+          git push origin "$BRANCH" || {
+            echo "::error::Failed to push after rebase retry."
+            exit 1
+          }
