@@ -14,6 +14,10 @@ concurrency:
   group: build-mrs
   cancel-in-progress: true
 
+env:
+  # 可选：填入你认可的 tools/mrs-generator 的 SHA256，开启完整性校验
+  MRS_GEN_SHA256: ""  # 例如: "abcd1234..."; 留空则不校验
+
 jobs:
   build-mrs:
     runs-on: ubuntu-latest
@@ -21,69 +25,28 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 可选：缓存工具，减少每次拉取
-      - name: Cache mrs-generator
-        uses: actions/cache@v4
-        with:
-          path: tools/mrs-generator
-          key: mrs-generator-bin-${{ runner.os }}
-
-      - name: Setup Go (for fallback install)
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      # 兜底：如果 tools/mrs-generator 不存在，则尝试通过 Go 代理安装
-      - name: Ensure mrs-generator present
+      - name: Verify tool exists (and integrity if configured)
         shell: bash
-        env:
-          GOPROXY: https://proxy.golang.org,direct
         run: |
           set -euo pipefail
-          if [ -x "tools/mrs-generator" ]; then
-            echo "Using existing tools/mrs-generator"
-            exit 0
+          if [ ! -x "tools/mrs-generator" ]; then
+            echo "::error::tools/mrs-generator not found or not executable."
+            echo "提示：先在 Actions 运行 'Get mrs-generator (via Go proxy)'，或手动上传 tools/mrs-generator。"
+            exit 1
           fi
-
-          echo "tools/mrs-generator not found, trying to install via Go proxy..."
-          go version
-
-          candidates=(
-            "github.com/MetaCubeX/mrs-generator@v1.1.0"
-            "github.com/MetaCubeX/mrs-generator@latest"
-          )
-          ok=""
-          for mod in "${candidates[@]}"; do
-            echo "Trying: $mod"
-            if go install "$mod"; then
-              ok="$mod"
-              break
+          if [ -n "${MRS_GEN_SHA256}" ]; then
+            echo "Verifying tools/mrs-generator SHA256..."
+            calc=$(sha256sum tools/mrs-generator | awk '{print $1}')
+            if [ "$calc" != "${MRS_GEN_SHA256}" ]; then
+              echo "::error::SHA256 mismatch! expected=${MRS_GEN_SHA256}, got=${calc}"
+              exit 1
             fi
-          done
-          if [ -z "$ok" ]; then
-            echo "::warning::Unable to install mrs-generator from Go proxy. If this persists, please run 'Get mrs-generator' workflow (commit_to_repo=true) or manually upload tools/mrs-generator."
-            exit 0
-          fi
-
-          BIN="$(go env GOPATH)/bin/mrs-generator"
-          if [ -x "$BIN" ]; then
-            mkdir -p tools
-            cp "$BIN" tools/mrs-generator
-            chmod +x tools/mrs-generator
-            echo "Installed mrs-generator from $ok"
-          else
-            echo "::warning::Installed binary not found at $BIN"
           fi
 
       - name: Convert TXT to MRS
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -x "tools/mrs-generator" ]; then
-            echo "::error::tools/mrs-generator not found or not executable. Please run 'Get mrs-generator' workflow or upload tools/mrs-generator."
-            exit 1
-          fi
-
           find rulesets -type f -name "*.txt" | while read -r in_file; do
             out_file=$(echo "$in_file" | sed 's|^rulesets/|mrs-rules/|' | sed 's|\.txt$|.mrs|')
             echo "Converting: $in_file  ==>  $out_file"
