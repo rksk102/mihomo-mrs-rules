@@ -1,7 +1,6 @@
 name: "Build MRS (keep directory structure, safe classical)"
 
 on:
-  # 手动触发 + 当本仓库直接改动 rulesets/ 时触发（可按需保留）
   workflow_dispatch:
     inputs:
       mihomo_url:
@@ -33,7 +32,6 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  # 默认下载你“仓库B”的 Release（tag=mihomo）产物（由 update-mihomo 流程生成）
   DEFAULT_MIHOMO_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/mihomo-meta-linux-amd64v3.tar.gz
   DEFAULT_SHA256_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/SHA256SUMS.txt
   DEFAULT_OUTPUT_DIR: mrs-rules
@@ -63,7 +61,7 @@ jobs:
         id: dl
         shell: bash
         run: |
-          set -euo pipefail
+          set uo pipefail
           URL="${{ inputs.mihomo_url != '' && inputs.mihomo_url || env.DEFAULT_MIHOMO_URL }}"
           echo "Download URL: $URL"
           curl -fSL "$URL" -o tools/mihomo.tar.gz
@@ -108,22 +106,21 @@ jobs:
           OUTPUT_DIR="${{ steps.outdir.outputs.dir }}"
           mkdir -p "$OUTPUT_DIR"
 
-          # 决定行为：按多数行类型决定，避免误判
           decide_behavior() {
             local f="$1"
             local n_total=0 n_domain=0 n_ip=0 n_classical=0 line
             while IFS= read -r line; do
               line="${line%%#*}"; line="${line%%!*}"
-              line="$(echo "$line" | sed 's/^[[:space:]]\\+//; s/[[:space:]]\\+$//')"
+              line="$(echo "$line" | sed 's/^[[:space:]]\+//; s/[[:space:]]\+$//')"
               [ -z "$line" ] && continue
               n_total=$((n_total+1))
               if echo "$line" | grep -Eq '^[A-Z-]+,.*$'; then
                 n_classical=$((n_classical+1)); continue
               fi
-              if echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\\.)+[A-Za-z0-9-]+$|^\\+\\.[A-Za-z0-9.-]+$|^\\*[A-Za-z0-9.-]+$'; then
+              if echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\.)+[A-Za-z0-9-]+$|^\+\.[A-Za-z0-9.-]+$|^\*[A-Za-z0-9.-]+$'; then
                 n_domain=$((n_domain+1)); continue
               fi
-              if echo "$line" | grep -Eq '^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$'; then
+              if echo "$line" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$'; then
                 n_ip=$((n_ip+1)); continue
               fi
             done < "$f"
@@ -138,7 +135,6 @@ jobs:
             fi
           }
 
-          # classical 过滤：只保留 mihomo classical provider 支持的前缀
           filter_classical() {
             local in="$1" out="$2"
             awk -F',' '
@@ -190,7 +186,7 @@ jobs:
             exit 0
           fi
 
-      - name: Commit and push MRS outputs
+      - name: Commit and push MRS outputs (with rebase retry)
         shell: bash
         run: |
           set -euo pipefail
@@ -203,4 +199,11 @@ jobs:
           git config user.email 'actions@github.com'
           git add "$OUT/"
           git commit -m "chore(mrs): convert TXT->MRS keeping directory structure (safe classical)"
-          git push
+
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          if git push origin "$BRANCH"; then
+            exit 0
+          fi
+          echo "Non-fast-forward on MRS push, rebasing and retrying..."
+          git pull --rebase origin "$BRANCH"
+          git push origin "$BRANCH"
