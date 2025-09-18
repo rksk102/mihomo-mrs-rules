@@ -35,12 +35,12 @@ concurrency:
 env:
   TZ: Asia/Shanghai
   # ===== 默认的仓库A信息（按需改成你的实际值）=====
-  A_OWNER: rksk102     # 仓库A所有者
-  A_REPO: rules-Repository      # 仓库A名称
-  A_REF: main                   # 仓库A分支/标签
-  A_PATH: merged-rules          # 仓库A根目录下要同步的文件夹名（例如 merged-rules）
+  A_OWNER: rksk102                 # 仓库A所有者
+  A_REPO: rules-Repository         # 仓库A名称
+  A_REF: main                      # 仓库A分支/标签
+  A_PATH: merged-rules             # 仓库A根目录下要同步的文件夹名（例如 merged-rules）
   # ===== 仓库B中的目标目录根 =====
-  TARGET_DIR_DEFAULT: rulesets  # 同步到本仓库哪个目录（默认 rulesets）
+  TARGET_DIR_DEFAULT: rulesets     # 同步到本仓库哪个目录（默认 rulesets）
 
 jobs:
   sync:
@@ -62,10 +62,10 @@ jobs:
           A_PATH="${{ inputs.a_path  != '' && inputs.a_path  || env.A_PATH  }}"
           TARGET_DIR="${{ inputs.target_dir != '' && inputs.target_dir || env.TARGET_DIR_DEFAULT }}"
 
-          echo "A_OWNER=$A_OWNER"     >> "$GITHUB_OUTPUT"
-          echo "A_REPO=$A_REPO"       >> "$GITHUB_OUTPUT"
-          echo "A_REF=$A_REF"         >> "$GITHUB_OUTPUT"
-          echo "A_PATH=$A_PATH"       >> "$GITHUB_OUTPUT"
+          echo "A_OWNER=$A_OWNER"       >> "$GITHUB_OUTPUT"
+          echo "A_REPO=$A_REPO"         >> "$GITHUB_OUTPUT"
+          echo "A_REF=$A_REF"           >> "$GITHUB_OUTPUT"
+          echo "A_PATH=$A_PATH"         >> "$GITHUB_OUTPUT"
           echo "TARGET_DIR=$TARGET_DIR" >> "$GITHUB_OUTPUT"
 
           git config user.name 'GitHub Actions Bot'
@@ -102,9 +102,9 @@ jobs:
           git checkout FETCH_HEAD
 
           if [ ! -d "${A_PATH}" ]; then
-            echo "::warning::Path '${A_PATH}' not found in Repo A (${A_OWNER}/${A_REPO}@${A_REF}). Nothing to sync."
-            exit 0
+            echo "::warning::Path '${A_PATH}' not found in Repo A (${A_OWNER}/${A_REPO}@${A_REF}). Nothing to sync hereafter."
           fi
+
           echo "Fetched files under ${A_PATH}:"
           find "${A_PATH}" -type f | head -n 50 || true
 
@@ -115,8 +115,14 @@ jobs:
           A_PATH="${{ steps.cfg.outputs.A_PATH }}"
           TARGET_DIR="${{ steps.cfg.outputs.TARGET_DIR }}"
 
+          # 源目录不存在则跳过同步
+          if [ ! -d "external/a_src/${A_PATH}" ]; then
+            echo "Nothing to sync (external/a_src/${A_PATH} not found)."
+            exit 0
+          fi
+
           mkdir -p "${TARGET_DIR}"
-          # 用 rsync 镜像同步：保持结构、删除目标中已不存在的文件
+          # 镜像同步：保持结构、删除目标中已不存在的文件
           rsync -a --delete "external/a_src/${A_PATH}/" "${TARGET_DIR}/"
 
       - name: Commit changes (if any)
@@ -131,9 +137,7 @@ jobs:
             exit 0
           fi
           git add "${TARGET_DIR}/"
-          git commit -m "chore(sync): mirror ${{
-            steps.cfg.outputs.A_OWNER }}/${{ steps.cfg.outputs.A_REPO }}:${{
-            steps.cfg.outputs.A_REF }}/${{ steps.cfg.outputs.A_PATH }} -> ${TARGET_DIR}/"
+          git commit -m "chore(sync): mirror ${{ steps.cfg.outputs.A_OWNER }}/${{ steps.cfg.outputs.A_REPO }}:${{ steps.cfg.outputs.A_REF }}/${{ steps.cfg.outputs.A_PATH }} -> ${TARGET_DIR}/"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Push with rebase retry
