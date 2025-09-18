@@ -1,17 +1,15 @@
 name: "Build MRS from TXT (Auto-Download Tool)"
 
 on:
-  # 当 rulesets 目录下的文件有变更时自动触发
   push:
     branches: [ main ]
     paths:
       - 'rulesets/**'
   
-  # 允许在 Actions 页面手动触发
   workflow_dispatch:
 
 permissions:
-  contents: write # 必须有这个权限，才能将生成的文件写回仓库
+  contents: write
 
 concurrency:
   group: build-mrs
@@ -21,58 +19,41 @@ jobs:
   build-mrs:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出你的仓库代码
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. 自动下载并准备 mrs-generator 工具
       - name: Download and Setup mrs-generator
         shell: bash
         run: |
-          echo "Downloading mrs-generator..."
-          # 创建工具目录
+          echo "Downloading mrs-generator directly from GitHub..."
           mkdir -p tools
           
-          # 从一个可靠的社区备份下载工具（使用镜像加速）
-          curl -L -o tools/mrs-generator.tar.gz "https://ghproxy.com/https://github.com/zYx-Tom/mrs-generator/releases/download/v1.1.0/mrs-generator-linux-amd64.tar.gz"
+          # 【重要修改】不再使用 ghproxy.com，直接从 GitHub 下载
+          curl -L -o tools/mrs-generator.tar.gz "https://github.com/zYx-Tom/mrs-generator/releases/download/v1.1.0/mrs-generator-linux-amd64.tar.gz"
           
           echo "Extracting tool..."
-          # 解压到 tools 目录
           tar -xzf tools/mrs-generator.tar.gz -C tools/
           
-          # 关键：给工具添加可执行权限
           chmod +x tools/mrs-generator
-          
           echo "mrs-generator is ready."
 
-      # 3. 转换 TXT 为 MRS
       - name: Convert TXT to MRS
         shell: bash
         run: |
-          # 查找所有 rulesets 下的文件并转换
           find rulesets -type f -name "*.txt" | while read -r in_file; do
-            # 计算输出路径，保持目录结构
             out_file=$(echo "$in_file" | sed 's|^rulesets/|mrs-rules/|' | sed 's|\.txt$|.mrs|')
-            
             echo "Converting: $in_file  ==>  $out_file"
-            
-            # 创建输出文件所在的目录
             mkdir -p "$(dirname "$out_file")"
-            
-            # 执行转换命令
             ./tools/mrs-generator -i "$in_file" -o "$out_file"
           done
 
-      # 4. 提交并推送生成的 MRS 文件
       - name: Commit and Push MRS files
         run: |
-          # 检查是否有文件变更
           if [[ -z $(git status --porcelain mrs-rules) ]]; then
             echo "No changes to MRS files. Nothing to commit."
             exit 0
           fi
           
-          echo "Committing updated MRS files..."
           git config user.name 'GitHub Actions Bot'
           git config user.email 'actions@github.com'
           git add mrs-rules/
