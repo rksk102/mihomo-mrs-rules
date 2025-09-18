@@ -1,20 +1,19 @@
-name: "Build MRS (keep directory structure)"
+name: "Build MRS (keep directory structure, safe classical)"
 
 on:
-  # 可选：当合并规则工作流完成后自动运行（把名字替换成你实际的合并工作流 name）
-  workflow_run:
-    workflows: ["Merge Rule Sets"]  # 比如 "5. Merge Rule Sets (Smart Copy)"，请改成你的实际名称
-    types: [completed]
+  # 跨仓库触发：由仓库A用 repository_dispatch 调用
+  repository_dispatch:
+    types: [build-mrs]
 
-  # 也允许手动触发，以及在直接修改 rulesets/ 时触发
+  # 手动触发 + 当本仓库直接改动 rulesets/ 时触发（可按需保留）
   workflow_dispatch:
     inputs:
       mihomo_url:
-        description: "覆盖下载URL（可选），默认用本仓库 tag=mihomo 的 amd64v3 包"
+        description: "覆盖下载 URL（可选），默认从本仓库 tag=mihomo 下载 amd64v3 包"
         required: false
         type: string
       verify_sha256:
-        description: "是否校验 SHA256（需要 Release 提供 SHA256SUMS.txt）"
+        description: "是否校验 SHA256（需 Release 提供 SHA256SUMS.txt）"
         required: true
         default: "false"
         type: choice
@@ -38,24 +37,31 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  # 默认下载你仓库 release/tag=mihomo 的打包 mihomo（amd64v3）
+  # 默认下载你“仓库B”的 Release（tag=mihomo）产物（由 update-mihomo 流程生成）
   DEFAULT_MIHOMO_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/mihomo-meta-linux-amd64v3.tar.gz
   DEFAULT_SHA256_URL: https://github.com/${{ github.repository }}/releases/download/mihomo/SHA256SUMS.txt
-  OUTPUT_DIR: ${{ inputs.output_dir != '' && inputs.output_dir || 'mrs-rules' }}
+  DEFAULT_OUTPUT_DIR: mrs-rules
 
 jobs:
   build:
-    # 若来源是 workflow_run，仅在上游成功时继续，避免失败链
-    if: |
-      github.event_name != 'workflow_run' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Prepare tools dir
         run: mkdir -p tools
+
+      - name: Resolve output directory
+        id: outdir
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.output_dir }}" ]; then
+            echo "dir=${{ inputs.output_dir }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "dir=${DEFAULT_OUTPUT_DIR}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download mihomo tarball
         id: dl
@@ -74,9 +80,9 @@ jobs:
           set -euo pipefail
           curl -fSL "$DEFAULT_SHA256_URL" -o tools/SHA256SUMS.txt
           calc=$(sha256sum tools/mihomo.tar.gz | awk '{print $1}')
+          echo "Calculated SHA256: $calc"
           if ! awk -v f="mihomo-meta-linux-amd64v3.tar.gz" -v c="$calc" '$2==f && $1==c {ok=1} END{exit !(ok)}' tools/SHA256SUMS.txt; then
             echo "::error::SHA256 mismatch for mihomo tar.gz"
-            echo "calc: $calc"
             grep 'mihomo-meta-linux-amd64v3.tar.gz' tools/SHA256SUMS.txt || true
             exit 1
           fi
@@ -86,7 +92,6 @@ jobs:
         run: |
           set -euo pipefail
           tar -xzf tools/mihomo.tar.gz -C tools/
-          # 包内文件名一般是 CrashCore
           if [ -f tools/CrashCore ]; then
             mv tools/CrashCore tools/mihomo
           fi
@@ -98,64 +103,94 @@ jobs:
           chmod +x tools/mihomo
           tools/mihomo -v || true
 
-      - name: Convert TXT to MRS (preserve directory structure)
+      - name: Convert TXT to MRS (preserve structure, safe classical)
         shell: bash
         run: |
           set -euo pipefail
           shopt -s globstar nullglob
 
-          OUTPUT_DIR="${OUTPUT_DIR}"
+          OUTPUT_DIR="${{ steps.outdir.outputs.dir }}"
+          mkdir -p "$OUTPUT_DIR"
 
-          # 路径优先判断 + 内容回退检测
-          path_hint_behavior() {
-            local f="$1" lower
-            lower="$(echo "$f" | tr '[:upper:]' '[:lower:]')"
-            if echo "$lower" | grep -Eq '/ip|/ipcidr|(^|/)ip[^/]*'; then
-              echo ipcidr; return
-            fi
-            if echo "$lower" | grep -Eq '/domain|/host|/dns'; then
-              echo domain; return
-            fi
-            echo ""  # 无路径提示，交由内容检测
-          }
-
-          detect_behavior_by_content() {
+          # 决定行为：按多数行类型决定，避免误判
+          decide_behavior() {
             local f="$1"
-            local total=0 domain_like=1 ipcidr_like=1 line
+            local n_total=0 n_domain=0 n_ip=0 n_classical=0 line
             while IFS= read -r line; do
               line="${line%%#*}"; line="${line%%!*}"
               line="$(echo "$line" | sed 's/^[[:space:]]\\+//; s/[[:space:]]\\+$//')"
               [ -z "$line" ] && continue
-              total=$((total+1))
-              echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\\.)+[A-Za-z0-9-]+$|^\\+\\.[A-Za-z0-9.-]+$|^\\*[A-Za-z0-9.-]+$' || domain_like=0
-              echo "$line" | grep -Eq '^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$' || ipcidr_like=0
+              n_total=$((n_total+1))
+              if echo "$line" | grep -Eq '^[A-Z-]+,.*$'; then
+                n_classical=$((n_classical+1)); continue
+              fi
+              if echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\\.)+[A-Za-z0-9-]+$|^\\+\\.[A-Za-z0-9.-]+$|^\\*[A-Za-z0-9.-]+$'; then
+                n_domain=$((n_domain+1)); continue
+              fi
+              if echo "$line" | grep -Eq '^([0-9]{1,3}\\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$'; then
+                n_ip=$((n_ip+1)); continue
+              fi
             done < "$f"
-            if [ "$total" -eq 0 ]; then echo domain; return; fi
-            if [ "$domain_like" -eq 1 ] && [ "$ipcidr_like" -eq 0 ]; then echo domain; return; fi
-            if [ "$ipcidr_like" -eq 1 ] && [ "$domain_like" -eq 0 ]; then echo ipcidr; return; fi
-            echo classical
+
+            if [ "$n_classical" -gt 0 ] && [ "$n_classical" -ge "$n_domain" ] && [ "$n_classical" -ge "$n_ip" ]; then
+              echo classical; return
+            fi
+            if [ "$n_domain" -ge "$n_ip" ]; then
+              echo domain; return
+            else
+              echo ipcidr; return
+            fi
           }
 
-          changed=0
+          # classical 过滤：只保留 mihomo classical provider 支持的前缀
+          filter_classical() {
+            local in="$1" out="$2"
+            awk -F',' '
+              BEGIN{OFS=","}
+              /^[[:space:]]*#/ {next}
+              /^[[:space:]]*$/ {next}
+              {
+                gsub(/^[[:space:]]+|[[:space:]]+$/,"",$1);
+                t=$1
+                if (t=="DOMAIN" || t=="DOMAIN-SUFFIX" || t=="DOMAIN-KEYWORD" || t=="DOMAIN-REGEX" || t=="IP-CIDR" || t=="IP-CIDR6" || t=="SRC-IP-CIDR") {
+                  print $0
+                }
+              }
+            ' "$in" > "$out"
+          }
+
+          converted=0
           while IFS= read -r -d '' in_file; do
-            # 生成输出路径：rulesets/xxx/yyy.txt -> ${OUTPUT_DIR}/xxx/yyy.mrs
-            out_file="${in_file#rulesets/}"
-            out_file="${OUTPUT_DIR}/${out_file%.txt}.mrs"
+            rel="${in_file#rulesets/}"
+            out_file="${OUTPUT_DIR}/${rel%.txt}.mrs"
             mkdir -p "$(dirname "$out_file")"
 
-            # 选择行为
-            beh="$(path_hint_behavior "$in_file")"
-            if [ -z "$beh" ]; then
-              beh="$(detect_behavior_by_content "$in_file")"
+            beh="$(decide_behavior "$in_file")"
+
+            if [ "$beh" = "classical" ]; then
+              tmp="$(mktemp)"
+              filter_classical "$in_file" "$tmp"
+              if [ ! -s "$tmp" ]; then
+                echo "Skip (empty after classical filter): $in_file"
+                rm -f "$tmp"
+                continue
+              fi
+              echo "Convert (classical filtered): $in_file -> $out_file"
+              tools/mihomo convert-ruleset classical text "$tmp" "$out_file" || { echo "::error::Convert failed: $in_file"; exit 1; }
+              rm -f "$tmp"
+            elif [ "$beh" = "domain" ]; then
+              echo "Convert (domain): $in_file -> $out_file"
+              tools/mihomo convert-ruleset domain text "$in_file" "$out_file" || { echo "::error::Convert failed: $in_file"; exit 1; }
+            else
+              echo "Convert (ipcidr): $in_file -> $out_file"
+              tools/mihomo convert-ruleset ipcidr text "$in_file" "$out_file" || { echo "::error::Convert failed: $in_file"; exit 1; }
             fi
 
-            echo "Convert: $in_file -> $out_file (behavior=$beh)"
-            tools/mihomo convert-ruleset "$beh" text "$in_file" "$out_file"
-            changed=1
+            converted=$((converted+1))
           done < <(find rulesets -type f -name "*.txt" -print0)
 
-          if [ "$changed" -eq 0 ]; then
-            echo "No .txt found under rulesets/. Nothing to do."
+          if [ "$converted" -eq 0 ]; then
+            echo "No convertible .txt found (after filtering)."
             exit 0
           fi
 
@@ -163,12 +198,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z $(git status --porcelain "${OUTPUT_DIR}") ]]; then
-            echo "No changes in ${OUTPUT_DIR}/."
+          OUT="${{ steps.outdir.outputs.dir }}"
+          if [[ -z $(git status --porcelain "$OUT") ]]; then
+            echo "No changes in $OUT/"
             exit 0
           fi
           git config user.name 'GitHub Actions Bot'
           git config user.email 'actions@github.com'
-          git add "${OUTPUT_DIR}/"
-          git commit -m "chore(mrs): convert TXT->MRS keeping directory structure"
+          git add "$OUT/"
+          git commit -m "chore(mrs): convert TXT->MRS keeping directory structure (safe classical)"
           git push
