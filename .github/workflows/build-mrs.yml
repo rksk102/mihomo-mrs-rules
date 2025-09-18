@@ -21,15 +21,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 如你的文件里已经有下载工具的步骤，可以保留；
-      # 但兜底步骤要放在 Convert 之前。
+      # 可选：缓存工具，减少每次拉取
+      - name: Cache mrs-generator
+        uses: actions/cache@v4
+        with:
+          path: tools/mrs-generator
+          key: mrs-generator-bin-${{ runner.os }}
 
       - name: Setup Go (for fallback install)
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      # 兜底安装步骤：放在“Convert TXT to MRS”之前
+      # 兜底：如果 tools/mrs-generator 不存在，则尝试通过 Go 代理安装
       - name: Ensure mrs-generator present
         shell: bash
         env:
@@ -42,15 +46,11 @@ jobs:
           fi
 
           echo "tools/mrs-generator not found, trying to install via Go proxy..."
-          # setup-go 已经装好 go 了，这里只需要调用
           go version
 
-          # 尝试多个候选模块路径
           candidates=(
             "github.com/MetaCubeX/mrs-generator@v1.1.0"
             "github.com/MetaCubeX/mrs-generator@latest"
-            "github.com/KOP-XIAO/mrs-generator@latest"
-            "github.com/Mihomo-Rules/mrs-generator@latest"
           )
           ok=""
           for mod in "${candidates[@]}"; do
@@ -61,27 +61,26 @@ jobs:
             fi
           done
           if [ -z "$ok" ]; then
-            echo "::error::Failed to install mrs-generator from Go proxy with all candidates."
-            exit 1
+            echo "::warning::Unable to install mrs-generator from Go proxy. If this persists, please run 'Get mrs-generator' workflow (commit_to_repo=true) or manually upload tools/mrs-generator."
+            exit 0
           fi
 
-          # 将安装的二进制复制到 tools/
           BIN="$(go env GOPATH)/bin/mrs-generator"
-          if [ ! -x "$BIN" ]; then
-            echo "::error::Installed binary not found at $BIN"
-            exit 1
+          if [ -x "$BIN" ]; then
+            mkdir -p tools
+            cp "$BIN" tools/mrs-generator
+            chmod +x tools/mrs-generator
+            echo "Installed mrs-generator from $ok"
+          else
+            echo "::warning::Installed binary not found at $BIN"
           fi
-          mkdir -p tools
-          cp "$BIN" tools/mrs-generator
-          chmod +x tools/mrs-generator
-          echo "Installed mrs-generator from $ok"
 
       - name: Convert TXT to MRS
         shell: bash
         run: |
           set -euo pipefail
           if [ ! -x "tools/mrs-generator" ]; then
-            echo "::error::tools/mrs-generator not found or not executable."
+            echo "::error::tools/mrs-generator not found or not executable. Please run 'Get mrs-generator' workflow or upload tools/mrs-generator."
             exit 1
           fi
 
