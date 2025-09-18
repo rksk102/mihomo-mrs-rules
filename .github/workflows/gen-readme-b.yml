@@ -1,10 +1,6 @@
 name: "Generate README for MRS (Repo B)"
 
 on:
-  workflow_run:
-    workflows: ["Build MRS (keep directory structure, safe classical)"]
-    types: [completed]
-    branches: [main]
   push:
     branches: [ main ]
     paths:
@@ -64,7 +60,6 @@ env:
 jobs:
   gen:
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout repository (full history for rebase)
         uses: actions/checkout@v4
