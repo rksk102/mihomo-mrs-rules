@@ -1,0 +1,33 @@
+name: "Generate README after MRS build"
+
+on:
+  workflow_run:
+    workflows: ["Build MRS (keep directory structure, safe classical)"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  gen:
+    if: github.event_name != 'workflow_run' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # TODO: 把你的 README 构建逻辑放在这里
+      - name: Rebuild README
+        run: |
+          echo "更新 README..." 
+          # 你的实际脚本，比如 python/gen_readme.py 或 node scripts/gen-readme.mjs
+      - name: Commit and push README
+        run: |
+          if [[ -z $(git status --porcelain README.md) ]]; then
+            echo "README 未变化"
+            exit 0
+          fi
+          git config user.name 'GitHub Actions Bot'
+          git config user.email 'actions@github.com'
+          git add README.md
+          git commit -m "docs: update README after MRS build"
+          git push
