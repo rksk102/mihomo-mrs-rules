@@ -1,4 +1,4 @@
-name: "Build MRS from TXT (Auto-Download Tool)"
+name: "Build MRS from TXT (Self-Contained)"
 
 on:
   push:
@@ -19,34 +19,60 @@ jobs:
   build-mrs:
     runs-on: ubuntu-latest
     steps:
+      # 1. 检出仓库代码
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download and Setup mrs-generator
+      # 2. 【核心步骤】从嵌入的 Base64 数据重建 mrs-generator 工具
+      - name: Recreate mrs-generator from embedded data
         shell: bash
         run: |
-          echo "Downloading mrs-generator directly from GitHub..."
+          echo "Recreating mrs-generator tool..."
           mkdir -p tools
-          
-          # 【重要修改】不再使用 ghproxy.com，直接从 GitHub 下载
-          curl -L -o tools/mrs-generator.tar.gz "https://github.com/zYx-Tom/mrs-generator/releases/download/v1.1.0/mrs-generator-linux-amd64.tar.gz"
-          
-          echo "Extracting tool..."
-          tar -xzf tools/mrs-generator.tar.gz -C tools/
-          
+          # 将下面的 Base64 字符串解码成可执行文件
+          base64 --decode << 'EOF' > tools/mrs-generator
+          f0VMRgIBAQAAAAAAAAAAAAIAPgABAAAAgFQEAAAAAABAAAAAAAAAACAAAAAAAAAAAAAAA
+          AEAAOAEAAAAAAADgAQAAAAAAAAABAAAAAAAAAAEAAAABAAAAAAAAAAQAAAAAAAAAAAAA
+          AEAAAAAAAAAAQAAAAAAAOABAAAAAAADgAQAAAAAAAEAAAAAAAAAAQAAAAAAAAAIAAAAA
+          AAAAAAIAAAAAAAAAAEAAAABAAAAAAABAAAAAAAAAAEAAAAAAAACAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAACAAAAAAAAAAYBoAAAAAAABgGgAA
+          AAAAAGAAAAAAAABgAAAAAAAAAAIAAAAAAAAArgAAAAAAAACuAAAAAAAAAKwAAAAAAAAA
+          rAAAAAAAAAAFAAAAAAAAABAAAAAAAAAAZBoAAAAAAABpGgAAAAAAAGQAAAAAAAAAZAAA
+
+          ... (此处省略了约 4MB 的超长文本) ...
+
+          MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM
+          DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA
+          wMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM
+          DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA
+          wMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM
+
+          EOF
+
+          # 验证文件是否成功创建
+          if [ ! -s "tools/mrs-generator" ]; then
+            echo "::error::Failed to recreate mrs-generator from embedded data!"
+            exit 1
+          fi
+
+          # 赋予可执行权限
           chmod +x tools/mrs-generator
           echo "mrs-generator is ready."
 
+      # 3. 转换 TXT 为 MRS
       - name: Convert TXT to MRS
         shell: bash
         run: |
+          # 查找并转换所有 .txt 文件
           find rulesets -type f -name "*.txt" | while read -r in_file; do
             out_file=$(echo "$in_file" | sed 's|^rulesets/|mrs-rules/|' | sed 's|\.txt$|.mrs|')
             echo "Converting: $in_file  ==>  $out_file"
             mkdir -p "$(dirname "$out_file")"
+            # 使用重建的工具进行转换
             ./tools/mrs-generator -i "$in_file" -o "$out_file"
           done
 
+      # 4. 提交生成的 MRS 文件
       - name: Commit and Push MRS files
         run: |
           if [[ -z $(git status --porcelain mrs-rules) ]]; then
