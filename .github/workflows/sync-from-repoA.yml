@@ -37,7 +37,7 @@ concurrency:
 env:
   TZ: Asia/Shanghai
   # ===== 默认的仓库A信息（按需改成你的实际值）=====
-  A_OWNER: your-name-or-org     # 仓库A所有者
+  A_OWNER: rksk102     # 仓库A所有者
   A_REPO: rules-Repository      # 仓库A名称
   A_REF: main                   # 仓库A分支/标签
   A_PATH: merged-rules          # 仓库A根目录下要同步的文件夹名（例如 merged-rules）
