@@ -1,8 +1,6 @@
 name: "Sync folder from Repo A (no PAT, no MRS)"
 
 on:
-  schedule:
-    - cron: "0 * * * *"   # 每小时运行一次，可按需调整
   workflow_dispatch:
     inputs:
       a_owner:
