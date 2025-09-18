@@ -1,10 +1,6 @@
 name: "Build MRS (keep directory structure, safe classical)"
 
 on:
-  # 跨仓库触发：由仓库A用 repository_dispatch 调用
-  repository_dispatch:
-    types: [build-mrs]
-
   # 手动触发 + 当本仓库直接改动 rulesets/ 时触发（可按需保留）
   workflow_dispatch:
     inputs:
