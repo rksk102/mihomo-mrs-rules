@@ -9,11 +9,11 @@ fi
 REF="${INPUT_REF:-main}"
 CDN="${INPUT_CDN:-jsdelivr}"
 
-VALIDATE_MODE="${INPUT_VALIDATE:-both}"      # both/jsdelivr/raw/none
+VALIDATE_MODE="${INPUT_VALIDATE:-jsdelivr}"      # both/jsdelivr/raw/none（建议默认 jsdelivr）
 FAIL_ON_BROKEN="${INPUT_FAIL_ON_BROKEN:-false}"
-CHECK_TIMEOUT="${INPUT_CHECK_TIMEOUT:-15}"
-CHECK_RETRIES="${INPUT_CHECK_RETRIES:-2}"
-PREFER_CDN="${INPUT_PREFER_CDN:-jsdelivr}"   # jsdelivr/raw
+CHECK_TIMEOUT="${INPUT_CHECK_TIMEOUT:-6}"
+CHECK_RETRIES="${INPUT_CHECK_RETRIES:-0}"
+PREFER_CDN="${INPUT_PREFER_CDN:-jsdelivr}"       # jsdelivr/raw
 
 owner="${REPO%/*}"
 repo="${REPO#*/}"
@@ -27,16 +27,15 @@ raw_url() {
   echo "https://raw.githubusercontent.com/${owner}/${repo}/${REF}/${path}"
 }
 
-# 返回 ok 或 fail:HTTP_CODE
+# 返回 ok 或 fail:HTTP_CODE（HEAD 请求，2xx/3xx 视为可用）
 check_url() {
   local url="$1"
   local code
-  code=$(curl -sS -o /dev/null -m "${CHECK_TIMEOUT}" --retry "${CHECK_RETRIES}" --retry-delay 2 -L -w '%{http_code}' "$url" || echo "000")
-  if [ "$code" = "200" ]; then
-    echo "ok"
-  else
-    echo "fail:${code}"
-  fi
+  code=$(curl -sS -I -o /dev/null --max-time "${CHECK_TIMEOUT}" --retry "${CHECK_RETRIES}" --retry-delay 1 -L -w '%{http_code}' "$url" || echo "000")
+  case "$code" in
+    2*|3*) echo "ok" ;;
+    *)     echo "fail:${code}" ;;
+  esac
 }
 
 decide_behavior() {
@@ -129,7 +128,6 @@ mapfile -d '' files < <(find mrs-rules -type f -name '*.mrs' -print0 2>/dev/null
         ;;
     esac
 
-    # 生成显示文本
     badge_js="(未检验)"; link_js="[jsDelivr](${url_js})"
     badge_raw="(未检验)"; link_raw="[raw](${url_raw})"
 
@@ -153,7 +151,7 @@ mapfile -d '' files < <(find mrs-rules -type f -name '*.mrs' -print0 2>/dev/null
       fi
     fi
 
-    # 推荐链接：优先选择可用的；若均未检验则按偏好；若检验且都失败则给 raw
+    # 推荐链接：优先选择可用的；若未检验则按偏好；若检验且都失败则给 raw
     recommended="$url_raw"
     if [ "$VALIDATE_MODE" = "none" ]; then
       recommended="$([ "$PREFER_CDN" = "jsdelivr" ] && echo "$url_js" || echo "$url_raw")"
