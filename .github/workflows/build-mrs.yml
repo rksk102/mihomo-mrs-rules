@@ -25,7 +25,7 @@ on:
 
 permissions:
   contents: write
-  actions: write   # 允许触发 gen-readme-b.yml 的 workflow_dispatch
+  actions: write
 
 concurrency:
   group: build-mrs
@@ -207,6 +207,7 @@ jobs:
               removed=$((removed+1))
             fi
           done < <(find "$OUT" -type f -name '*.mrs' -print0)
+          # 清理空目录
           find "$OUT" -type d -empty -delete || true
           echo "Stale removed: $removed"
 
@@ -221,6 +222,7 @@ jobs:
           fi
           git config user.name 'GitHub Actions Bot'
           git config user.email 'actions@github.com'
+          # 使用 -A 确保删除也会被提交
           git add -A "$OUT/"
           git commit -m "chore(mrs): sync outputs with rulesets (cleaned stale + converted)"
 
@@ -232,12 +234,12 @@ jobs:
           git pull --rebase origin "$BRANCH"
           git push origin "$BRANCH"
 
-      - name: Trigger gen-readme-b workflow
+      - name: Trigger gen-readme-fast workflow
         if: ${{ success() }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_FILE: gen-readme-b.yml
+          WORKFLOW_FILE: gen-readme-fast.yml
           REF: ${{ github.ref_name || 'main' }}
         run: |
           set -euo pipefail
@@ -246,18 +248,5 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
-            -d @- <<JSON
-          {
-            "ref": "${REF}",
-            "inputs": {
-              "ref": "${REF}",
-              "cdn": "jsdelivr",
-              "validate_mode": "jsdelivr",
-              "fail_on_broken": "false",
-              "check_timeout": "6",
-              "check_retries": "0",
-              "prefer_cdn": "jsdelivr"
-            }
-          }
-          JSON
-          echo "Dispatched gen-readme-b."
+            -d "{\"ref\":\"${REF}\",\"inputs\":{\"ref\":\"${REF}\"}}"
+          echo "Dispatched gen-readme-fast."
