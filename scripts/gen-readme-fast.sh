@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# 逐行判定行为（不减功能），用单次 AWK 扫描提速；可并行；可打印计数；可开启旧法对照校验
+# 逐行判定行为（不减功能），用单次 AWK 扫描提速；并行；可打印计数；可开启旧法对照校验
 set -euo pipefail
 
 # 可调参数
-MRS_JOBS="${MRS_JOBS:-2}"                      # 并发文件数
-SNIFF_MAX="${SNIFF_MAX:-0}"                    # 0=读完整个 TXT；>0=仅读前 N 行
-SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true 时路径段包含 type 则直接信任
+MRS_JOBS="${MRS_JOBS:-2 行
+SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true：路径含 type 段则直接信任（mrs-rules/<policy>/<type>/...）
 PROGRESS_EVERY="${PROGRESS_EVERY:-5}"          # 总体进度打印频率
 VERBOSE_PROGRESS="${VERBOSE_PROGRESS:-true}"   # 每个文件一行 DONE 日志
-DEBUG_BEHAVIOR_COUNTS="${DEBUG_BEHAVIOR_COUNTS:-true}" # 打印每文件计数和扫描模式
+DEBUG_BEHAVIOR_COUNTS="${DEBUG_BEHAVIOR_COUNTS:-false}" # 打印每文件计数和扫描模式
 VALIDATE_WITH_SLOW="${VALIDATE_WITH_SLOW:-false}"       # 用旧慢方法对照校验
 VALIDATE_FAIL_ON_MISMATCH="${VALIDATE_FAIL_ON_MISMATCH:-false}"
 
@@ -47,10 +46,9 @@ behavior_from_path() {
 # 2) 新法：AWK 单次扫描逐行判定（仍逐行），可限行数；可打印统计到 stderr
 decide_behavior_awk() {
   local txt="$1"
-  local max="${2:-0}"  # 0=全文件；>0=最多读前 max 行
+  local max="${2:-0}"   # 0=全文件；>0=最多读前 max 行
   local debug="${3:-false}"  # 打印计数
   [ -f "$txt" ] || {
-    # 找不到源 TXT：回落 domain（与早先逻辑一致）
     if [ "$debug" = "true" ]; then
       echo "[AWK] source missing -> behavior=domain (scan=none)" >&2
     fi
@@ -80,7 +78,6 @@ decide_behavior_awk() {
       else                                                             beh="ipcidr"
       if (DEBUG=="true") {
         scan = (MAX>0 ? sprintf("head:%d", MAX) : "full")
-        # 打印到 stderr，便于你在日志看到计数
         printf("[AWK] scan=%s counts: classical=%d, domain=%d, ip=%d -> behavior=%s\n", scan, n_classic, n_domain, n_ip, beh) > "/dev/stderr"
       }
       print beh
@@ -93,10 +90,8 @@ decide_behavior_slow() {
   local f="$1"
   local n_total=0 n_domain=0 n_ip=0 n_classical=0 line
   [ -f "$f" ] || { echo "domain"; return 0; }
-  # 逐行处理，和你之前的慢逻辑一致
   while IFS= read -r line; do
     line="${line%%#*}"; line="${line%%!*}"
-    # 去掉首尾空白
     line="$(echo "$line" | sed 's/^[[:space:]]\+//; s/[[:space:]]\+$//')"
     [ -z "$line" ] && continue
     n_total=$((n_total+1))
@@ -182,12 +177,11 @@ work_one() {
 export -f behavior_from_path decide_behavior_awk decide_behavior_slow work_one
 export SHORTCIRCUIT_BY_PATH SNIFF_MAX VERBOSE_PROGRESS DEBUG_BEHAVIOR_COUNTS VALIDATE_WITH_SLOW VALIDATE_FAIL_ON_MISMATCH
 
-# 并行执行，并后台记录进度
+# 并行执行：stdout 写 rows；stderr 同时写控制台并保存到 workers.log（tee）
 if [ "$total" -gt 0 ]; then
   printf "%s\0" "${files[@]}" | xargs -0 -n1 -P "${MRS_JOBS}" -I{} bash -c '
     work_one "$1"
-  ' _ {} > "$rows" 2> "${tmpdir}/workers.log" &
-
+  ' _ {} > "$rows" 2> >(tee -a "${tmpdir}/workers.log" >&2) &
   worker_pid=$!
 
   # 轮询总体进度
@@ -202,15 +196,25 @@ if [ "$total" -gt 0 ]; then
   wait "$worker_pid" || true
 fi
 
-# 生成 README.md（保持原格式与输出）
+# 统计各行为数量（从 rows.tsv 计算）
+domain_count=$(awk -F'\t' '$2=="domain"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
+ipcidr_count=$(awk -F'\t' '$2=="ipcidr"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
+classical_count=$(awk -F'\t' '$2=="classical"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
+
+# 生成 README.md（样式优化 + 新增“名称”列）
 {
   echo "# MRS Rule-Providers Index"
   echo
-  echo "> 本文件自动生成（仓库B）。最近更新：${updated_at}"
+  echo "> 本文件自动生成。用于 mihomo 的 rule-providers（format: mrs）。"
   echo
-  echo "本仓库提供将 rulesets 文本规则转换后的 MRS 规则集（mrs-rules/）。下表给出每个 .mrs 的直链。"
+  echo "概览"
   echo
-  echo "使用方式示例（behavior 与文件行为一致）："
+  echo "- 仓库：${REPO}"
+  echo "- 分支/标签：${REF}"
+  echo "- 最近更新：${updated_at}"
+  echo "- 文件总数：${total}（domain=${domain_count}，ipcidr=${ipcidr_count}，classical=${classical_count}）"
+  echo
+  echo "快速引用模板"
   echo
   echo '```yaml'
   echo 'rule-providers:'
@@ -222,33 +226,43 @@ fi
   echo '    interval: 86400'
   echo '```'
   echo
-
   if [ "$total" -eq 0 ]; then
     echo "当前 mrs-rules/ 目录为空。请先运行构建流程生成 .mrs。"
   else
-    echo "| 相对路径 | 行为 behavior | jsDelivr | raw |"
-    echo "| --- | --- | --- | --- |"
-
+    echo "规则文件一览"
+    echo
+    echo "| 名称 | 行为 | 策略 | 所属 | 相对路径 | jsDelivr | raw |"
+    echo "| --- | --- | --- | --- | --- | --- | --- |"
     # 稳定输出顺序
     sort -t$'\t' -k1,1 "$rows" | while IFS=$'\t' read -r rel beh; do
       path="mrs-rules/${rel}"
+      # 名称：文件名（去掉扩展名）
+      base="${rel##*/}"; name="${base%.mrs}"
+      # 从路径解析策略/所属（仅当路径层级>=4 时）
+      IFS='/' read -r -a parts <<< "$rel"
+      policy="-" ; owner="-" ; type_seg="-"
+      if [ "${#parts[@]}" -ge 4 ]; then
+        policy="${parts[0]}"
+        type_seg="${parts[1]}"
+        owner="${parts[2]}"
+      fi
       link_js="$(cdn_url "$path")"
       link_raw="$(raw_url "$path")"
       safe_rel="$(echo "$rel" | sed 's/|/\\|/g')"
-      echo "| ${safe_rel} | ${beh} | [jsDelivr](${link_js}) | [raw](${link_raw}) |"
+      safe_name="$(echo "$name" | sed 's/|/\\|/g')"
+      safe_policy="$(echo "$policy" | sed 's/|/\\|/g')"
+      safe_owner="$(echo "$owner" | sed 's/|/\\|/g')"
+      echo "| ${safe_name} | ${beh} | ${safe_policy} | ${safe_owner} | ${safe_rel} | [jsDelivr](${link_js}) | [raw](${link_raw}) |"
     done
   fi
-
   echo
-  echo "提示：请选择与你引用文件相匹配的 behavior（domain/ipcidr/classical）。"
+  echo "提示"
+  echo
+  echo "- 请在客户端选择与文件相匹配的 behavior（domain/ipcidr/classical）。"
+  echo "- jsDelivr/raw 链接未在本流程中联机校验。如需检测，请运行手动的链接检查工作流。"
 } > README.md
 
 log "All done. Generated README for ${total} files."
-if [ -s "${tmpdir}/workers.log" ]; then
-  log "Worker notes (stderr from workers) are available above."
-fi
-
-# 可选：写入 GitHub Actions Summary（存在才写）
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### README 生成摘要"
@@ -256,8 +270,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "- 仓库：${REPO}"
     echo "- 分支/标签：${REF}"
     echo "- 文件总数：${total}"
-    echo "- 并发：${MRS_JOBS}"
-    echo "- 判定模式：逐行 AWK（SNIFF_MAX=${SNIFF_MAX}；路径短路=${SHORTCIRCUIT_BY_PATH})"
-    echo "- 调试：DEBUG_BEHAVIOR_COUNTS=${DEBUG_BEHAVIOR_COUNTS}；VALIDATE_WITH_SLOW=${VALIDATE_WITH_SLOW}"
+    echo "- 行为统计：domain=${domain_count}，ipcidr=${ipcidr_count}，classical=${classical_count}"
+    echo "- 并发：${MRS_JOBS}；判定：逐行 AWK（SNIFF_MAX=${SNIFF_MAX}；路径短路=${SHORTCIRCUIT_BY_PATH})"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
