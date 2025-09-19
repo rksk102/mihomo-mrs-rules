@@ -25,7 +25,7 @@ on:
 
 permissions:
   contents: write
-  actions: write   # 为触发 gen-readme-b.yml 的 workflow_dispatch 赋权
+  actions: write   # 允许触发 gen-readme-b.yml 的 workflow_dispatch
 
 concurrency:
   group: build-mrs
@@ -62,7 +62,7 @@ jobs:
         id: dl
         shell: bash
         run: |
-          set -euo pipefail   # 修正了这里的笔误
+          set -euo pipefail
           URL="${{ inputs.mihomo_url != '' && inputs.mihomo_url || env.DEFAULT_MIHOMO_URL }}"
           echo "Download URL: $URL"
           curl -fSL "$URL" -o tools/mihomo.tar.gz
@@ -165,7 +165,7 @@ jobs:
               filter_classical "$in_file" "$tmp"
               if [ ! -s "$tmp" ]; then
                 echo "Skip (empty after classical filter): $in_file"
-                # 增加：若已有旧产物则删除，避免残留
+                # 若已有旧产物则删除，避免残留
                 if [ -f "$out_file" ]; then
                   rm -f "$out_file"
                   echo "Removed stale output: $out_file"
@@ -189,10 +189,8 @@ jobs:
 
           if [ "$converted" -eq 0 ]; then
             echo "No convertible .txt found (after filtering)."
-            # 即使没有转换，也可能有上面删除的 stale 产物，后续清理步骤会处理
           fi
 
-      # 新增：清理没有对应源 TXT 的孤儿 .mrs，并清理空目录
       - name: Cleanup stale MRS files (no source TXT)
         shell: bash
         run: |
@@ -209,7 +207,6 @@ jobs:
               removed=$((removed+1))
             fi
           done < <(find "$OUT" -type f -name '*.mrs' -print0)
-          # 清理空目录
           find "$OUT" -type d -empty -delete || true
           echo "Stale removed: $removed"
 
@@ -224,7 +221,6 @@ jobs:
           fi
           git config user.name 'GitHub Actions Bot'
           git config user.email 'actions@github.com'
-          # 使用 -A 确保删除也会被提交
           git add -A "$OUT/"
           git commit -m "chore(mrs): sync outputs with rulesets (cleaned stale + converted)"
 
@@ -236,7 +232,6 @@ jobs:
           git pull --rebase origin "$BRANCH"
           git push origin "$BRANCH"
 
-      # 构建完成后，自动触发生成 README（要求 gen-readme-b.yml 包含 on: workflow_dispatch）
       - name: Trigger gen-readme-b workflow
         if: ${{ success() }}
         env:
@@ -251,5 +246,18 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
-            -d "{\"ref\":\"${REF}\",\"inputs\":{\"ref\":\"${REF}\"}}"
+            -d @- <<JSON
+          {
+            "ref": "${REF}",
+            "inputs": {
+              "ref": "${REF}",
+              "cdn": "jsdelivr",
+              "validate_mode": "jsdelivr",
+              "fail_on_broken": "false",
+              "check_timeout": "6",
+              "check_retries": "0",
+              "prefer_cdn": "jsdelivr"
+            }
+          }
+          JSON
           echo "Dispatched gen-readme-b."
