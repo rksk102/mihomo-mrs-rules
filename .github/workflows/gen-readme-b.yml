@@ -21,7 +21,7 @@ on:
       validate_mode:
         description: "Link check: both/jsdelivr/raw/none"
         required: false
-        default: "both"
+        default: "jsdelivr"      # 调整默认值，避免检查两条链接导致过慢
         type: choice
         options: ["both", "jsdelivr", "raw", "none"]
       fail_on_broken:
@@ -33,12 +33,12 @@ on:
       check_timeout:
         description: "Per-link timeout (seconds)"
         required: false
-        default: "15"
+        default: "6"            # 减小默认超时
         type: string
       check_retries:
         description: "Per-link retries"
         required: false
-        default: "2"
+        default: "0"            # 默认不重试，加快速度
         type: string
       prefer_cdn:
         description: "Recommended link preference (jsdelivr/raw)"
@@ -60,6 +60,7 @@ env:
 jobs:
   gen:
     runs-on: ubuntu-latest
+    timeout-minutes: 20   # 总体超时保护，避免卡住太久
     steps:
       - name: Checkout repository (full history for rebase)
         uses: actions/checkout@v4
@@ -87,10 +88,10 @@ jobs:
         env:
           INPUT_REF: ${{ inputs.ref || 'main' }}
           INPUT_CDN: ${{ inputs.cdn || 'jsdelivr' }}
-          INPUT_VALIDATE: ${{ inputs.validate_mode || 'both' }}
+          INPUT_VALIDATE: ${{ inputs.validate_mode || 'jsdelivr' }}
           INPUT_FAIL_ON_BROKEN: ${{ inputs.fail_on_broken || 'false' }}
-          INPUT_CHECK_TIMEOUT: ${{ inputs.check_timeout || '15' }}
-          INPUT_CHECK_RETRIES: ${{ inputs.check_retries || '2' }}
+          INPUT_CHECK_TIMEOUT: ${{ inputs.check_timeout || '6' }}
+          INPUT_CHECK_RETRIES: ${{ inputs.check_retries || '0' }}
           INPUT_PREFER_CDN: ${{ inputs.prefer_cdn || 'jsdelivr' }}
         run: scripts/gen-readme-b.sh
 
