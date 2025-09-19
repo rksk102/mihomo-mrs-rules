@@ -3,10 +3,10 @@
 set -euo pipefail
 
 # 可调参数（如未设置则使用默认）
-MRS_JOBS="${MRS_JOBS:-2}"              # 并发文件数
-SNIFF_MAX="${SNIFF_MAX:-0}"            # 0=读完整个 TXT；>0=仅读前 N 行（提速）
+MRS_JOBS="${MRS_JOBS:-2}"                    # 并发文件数
+SNIFF_MAX="${SNIFF_MAX:-0}"                  # 0=读完整个 TXT；>0=仅读前 N 行（提速）
 SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true 时路径段包含 type 则直接信任
-PROGRESS_EVERY="${PROGRESS_EVERY:-5}"  # 每处理多少文件打印一次进度
+PROGRESS_EVERY="${PROGRESS_EVERY:-5}"        # 每处理多少文件打印一次进度
 VERBOSE_PROGRESS="${VERBOSE_PROGRESS:-true}" # 每个文件一行 DONE 日志
 
 # 基本信息
@@ -45,7 +45,7 @@ behavior_from_path() {
 decide_behavior_awk() {
   local txt="$1"
   local max="${2:-0}"  # 0=全文件；>0=最多读前 max 行
-  [ -f "$txt" ] || { echo "domain"; return 0; }
+  [ -f "$txt" ] || { echo "domain"; return 0; }  # 找不到源 TXT 时回落为 domain（与旧脚本一致）
 
   awk -v MAX="$max" '
     function trim(s){ sub(/^[[:space:]]+/,"",s); sub(/[[:space:]]+$/,"",s); return s }
@@ -159,20 +159,19 @@ fi
 
   if [ "$total" -eq 0 ]; then
     echo "当前 mrs-rules/ 目录为空。请先运行构建流程生成 .mrs。"
-    exit 0
+  else
+    echo "| 相对路径 | 行为 behavior | jsDelivr | raw |"
+    echo "| --- | --- | --- | --- |"
+
+    # 稳定输出顺序
+    sort -t$'\t' -k1,1 "$rows" | while IFS=$'\t' read -r rel beh; do
+      path="mrs-rules/${rel}"
+      link_js="$(cdn_url "$path")"
+      link_raw="$(raw_url "$path")"
+      safe_rel="$(echo "$rel" | sed 's/|/\\|/g')"
+      echo "| ${safe_rel} | ${beh} | [jsDelivr](${link_js}) | [raw](${link_raw}) |"
+    done
   fi
-
-  echo "| 相对路径 | 行为 behavior | jsDelivr | raw |"
-  echo "| --- | --- | --- | --- |"
-
-  # 稳定输出顺序
-  sort -t$'\t' -k1,1 "$rows" | while IFS=$'\t' read -r rel beh; do
-    path="mrs-rules/${rel}"
-    link_js="$(cdn_url "$path")"
-    link_raw="$(raw_url "$path")"
-    safe_rel="$(echo "$rel" | sed 's/|/\\|/g')"
-    echo "| ${safe_rel} | ${beh} | [jsDelivr](${link_js}) | [raw](${link_raw}) |"
-  done
 
   echo
   echo "提示：请选择与你引用文件相匹配的 behavior（domain/ipcidr/classical）。"
