@@ -55,10 +55,25 @@ jobs:
       - name: Make generator executable
         run: chmod +x scripts/gen-readme-fast.sh
 
+      - name: Normalize line endings (LF) for script
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y dos2unix
+          dos2unix scripts/gen-readme-fast.sh || true
+
+      - name: Bash syntax check
+        run: bash -n scripts/gen-readme-fast.sh
+
       - name: Generate README (fast)
         env:
           INPUT_REF: ${{ inputs.ref || 'main' }}
           INPUT_CDN: ${{ inputs.cdn || 'jsdelivr' }}
+          # 可选调优（保持不配即与旧逻辑完全一致）
+          # MRS_JOBS: "2"
+          # SNIFF_MAX: "0"              # 若设为 "200" 可明显提速
+          # SHORTCIRCUIT_BY_PATH: "false"
+          # PROGRESS_EVERY: "5"
+          # VERBOSE_PROGRESS: "true"
         run: scripts/gen-readme-fast.sh
 
       - name: Commit README changes (if any)
