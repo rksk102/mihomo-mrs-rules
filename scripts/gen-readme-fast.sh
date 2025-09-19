@@ -7,7 +7,7 @@ MRS_JOBS="${MRS_JOBS:-2 行
 SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true：路径含 type 段则直接信任（mrs-rules/<policy>/<type>/...）
 PROGRESS_EVERY="${PROGRESS_EVERY:-5}"          # 总体进度打印频率
 VERBOSE_PROGRESS="${VERBOSE_PROGRESS:-true}"   # 每个文件一行 DONE 日志
-DEBUG_BEHAVIOR_COUNTS="${DEBUG_BEHAVIOR_COUNTS:-false}" # 打印每文件计数和扫描模式
+DEBUG_BEHAVIOR_COUNTS="${DEBUG_BEHAVIOR_COUNTS:-true}" # 打印每文件计数和扫描模式
 VALIDATE_WITH_SLOW="${VALIDATE_WITH_SLOW:-false}"       # 用旧慢方法对照校验
 VALIDATE_FAIL_ON_MISMATCH="${VALIDATE_FAIL_ON_MISMATCH:-false}"
 
