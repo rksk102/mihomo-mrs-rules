@@ -1,10 +1,15 @@
 # MRS Rule-Providers Index
 
-> 本文件自动生成（仓库B）。最近更新：2025-09-19 12:44:00 CST
+> 本文件自动生成。用于 mihomo 的 rule-providers（format: mrs）。
 
-本仓库提供将 rulesets 文本规则转换后的 MRS 规则集（mrs-rules/）。下表给出每个 .mrs 的直链。
+概览
 
-使用方式示例（behavior 与文件行为一致）：
+- 仓库：rksk102/mihomo-mrs-rules
+- 分支/标签：main
+- 最近更新：2025-09-19 13:26:42 CST
+- 文件总数：17（domain=14，ipcidr=3，classical=0）
+
+快速引用模板
 
 ```yaml
 rule-providers:
@@ -16,24 +21,29 @@ rule-providers:
     interval: 86400
 ```
 
-| 相对路径 | 行为 behavior | jsDelivr | raw |
-| --- | --- | --- | --- |
-| all-adblock.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/all-adblock.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/all-adblock.mrs) |
-| all-proxy.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/all-proxy.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/all-proxy.mrs) |
-| block/domain/Loyalsoldier/reject.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/reject.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/reject.mrs) |
-| block/domain/Loyalsoldier/win-extra.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/win-extra.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/win-extra.mrs) |
-| block/domain/Loyalsoldier/win-spy.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/win-spy.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/win-spy.mrs) |
-| cnip.mrs | ipcidr | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/cnip.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/cnip.mrs) |
-| direct/domain/Loyalsoldier/apple-cn.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/apple-cn.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/apple-cn.mrs) |
-| direct/domain/Loyalsoldier/china-list.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/china-list.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/china-list.mrs) |
-| direct/domain/Loyalsoldier/direct-list.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/direct-list.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/direct-list.mrs) |
-| direct/domain/Loyalsoldier/private.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/private.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/private.mrs) |
-| direct/domain/MetaCubeX/geolocation-cn.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/MetaCubeX/geolocation-cn.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/MetaCubeX/geolocation-cn.mrs) |
-| direct/domain/github.com/microsoft-cn.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/github.com/microsoft-cn.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/domain/github.com/microsoft-cn.mrs) |
-| direct/ipcidr/Loyalsoldier/lancidr.mrs | ipcidr | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/ipcidr/Loyalsoldier/lancidr.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/direct/ipcidr/Loyalsoldier/lancidr.mrs) |
-| proxy/domain/Loyalsoldier/gfw.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/gfw.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/gfw.mrs) |
-| proxy/domain/Loyalsoldier/telegramcidr.mrs | ipcidr | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/telegramcidr.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/telegramcidr.mrs) |
-| proxy/domain/Loyalsoldier/tld-not-cn.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/tld-not-cn.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/tld-not-cn.mrs) |
-| proxy/domain/gh-proxy.com/category-ai-!cn.mrs | domain | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/gh-proxy.com/category-ai-!cn.mrs) | [raw](https://raw.githubusercontent.com/rksk102/mihomo-mrs-rules/main/mrs-rules/proxy/domain/gh-proxy.com/category-ai-!cn.mrs) |
+规则文件一览
 
-提示：请选择与你引用文件相匹配的 behavior（domain/ipcidr/classical）。
+| 名称 | 行为 | 策略 | 所属 | 相对路径 | jsDelivr | raw |
+| --- | --- | --- | --- | --- | --- | --- |
+| all-adblock | domain | - | - | all-adblock.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/all-adblock.mrs) | [raw](https://raw.githubusercontent.com/-/mihomo-mrs-rules/main/mrs-rules/all-adblock.mrs) |
+| all-proxy | domain | - | - | all-proxy.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/all-proxy.mrs) | [raw](https://raw.githubusercontent.com/-/mihomo-mrs-rules/main/mrs-rules/all-proxy.mrs) |
+| reject | domain | block | Loyalsoldier | block/domain/Loyalsoldier/reject.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/reject.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/reject.mrs) |
+| win-extra | domain | block | Loyalsoldier | block/domain/Loyalsoldier/win-extra.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/win-extra.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/win-extra.mrs) |
+| win-spy | domain | block | Loyalsoldier | block/domain/Loyalsoldier/win-spy.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/block/domain/Loyalsoldier/win-spy.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/block/domain/Loyalsoldier/win-spy.mrs) |
+| cnip | ipcidr | - | - | cnip.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/cnip.mrs) | [raw](https://raw.githubusercontent.com/-/mihomo-mrs-rules/main/mrs-rules/cnip.mrs) |
+| apple-cn | domain | direct | Loyalsoldier | direct/domain/Loyalsoldier/apple-cn.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/apple-cn.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/apple-cn.mrs) |
+| china-list | domain | direct | Loyalsoldier | direct/domain/Loyalsoldier/china-list.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/china-list.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/china-list.mrs) |
+| direct-list | domain | direct | Loyalsoldier | direct/domain/Loyalsoldier/direct-list.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/direct-list.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/direct-list.mrs) |
+| private | domain | direct | Loyalsoldier | direct/domain/Loyalsoldier/private.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/Loyalsoldier/private.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/direct/domain/Loyalsoldier/private.mrs) |
+| geolocation-cn | domain | direct | MetaCubeX | direct/domain/MetaCubeX/geolocation-cn.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/MetaCubeX/geolocation-cn.mrs) | [raw](https://raw.githubusercontent.com/MetaCubeX/mihomo-mrs-rules/main/mrs-rules/direct/domain/MetaCubeX/geolocation-cn.mrs) |
+| microsoft-cn | domain | direct | github.com | direct/domain/github.com/microsoft-cn.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/domain/github.com/microsoft-cn.mrs) | [raw](https://raw.githubusercontent.com/github.com/mihomo-mrs-rules/main/mrs-rules/direct/domain/github.com/microsoft-cn.mrs) |
+| lancidr | ipcidr | direct | Loyalsoldier | direct/ipcidr/Loyalsoldier/lancidr.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/direct/ipcidr/Loyalsoldier/lancidr.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/direct/ipcidr/Loyalsoldier/lancidr.mrs) |
+| gfw | domain | proxy | Loyalsoldier | proxy/domain/Loyalsoldier/gfw.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/gfw.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/gfw.mrs) |
+| telegramcidr | ipcidr | proxy | Loyalsoldier | proxy/domain/Loyalsoldier/telegramcidr.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/telegramcidr.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/telegramcidr.mrs) |
+| tld-not-cn | domain | proxy | Loyalsoldier | proxy/domain/Loyalsoldier/tld-not-cn.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/Loyalsoldier/tld-not-cn.mrs) | [raw](https://raw.githubusercontent.com/Loyalsoldier/mihomo-mrs-rules/main/mrs-rules/proxy/domain/Loyalsoldier/tld-not-cn.mrs) |
+| category-ai-!cn | domain | proxy | gh-proxy.com | proxy/domain/gh-proxy.com/category-ai-!cn.mrs | [jsDelivr](https://cdn.jsdelivr.net/gh/rksk102/mihomo-mrs-rules@main/mrs-rules/proxy/domain/gh-proxy.com/category-ai-!cn.mrs) | [raw](https://raw.githubusercontent.com/gh-proxy.com/mihomo-mrs-rules/main/mrs-rules/proxy/domain/gh-proxy.com/category-ai-!cn.mrs) |
+
+提示
+
+- 请在客户端选择与文件相匹配的 behavior（domain/ipcidr/classical）。
+- jsDelivr/raw 链接未在本流程中联机校验。如需检测，请运行手动的链接检查工作流。
