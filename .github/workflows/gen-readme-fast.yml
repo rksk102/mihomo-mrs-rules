@@ -93,17 +93,18 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Commit README changes (if any)
+      - name: Commit README changes (stage first, then check cached)
         id: commit
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet README.md; then
+          # 关键修复：先把 README.md 加入暂存，这样“新文件”也能被识别
+          git add README.md || true
+          if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No README changes to commit."
+            echo "No README changes to commit (tracked content unchanged, or nothing staged)."
             exit 0
           fi
-          git add README.md
           git commit -m "docs(readme): auto-update (mrs index, fast) at $(date +'%Y-%m-%d %H:%M:%S %Z')"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
