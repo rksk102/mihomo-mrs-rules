@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# 逐行判定行为（不减功能），用单次 AWK 扫描提速；并行；可打印计数；可开启旧法对照校验
+# 逐行判定行为（不减功能），单次 AWK 扫描提速；并行；可打印计数；可开启旧法对照校验
 set -euo pipefail
 
 # 可调参数
-MRS_JOBS="${MRS_JOBS:-2 行
-SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true：路径含 type 段则直接信任（mrs-rules/<policy>/<type>/...）
+MRS_JOBS="${MRS_JOBS:-2}"                      # 并发文件数
+SNIFF_MAX="${SNIFF_MAX:-0}"                    # 0=读完整 TXT；>0=仅读前 N 行
+SHORTCIRCUIT_BY_PATH="${SHORTCIRCUIT_BY_PATH:-false}"  # true：路径含 type 段则直接信任
 PROGRESS_EVERY="${PROGRESS_EVERY:-5}"          # 总体进度打印频率
 VERBOSE_PROGRESS="${VERBOSE_PROGRESS:-true}"   # 每个文件一行 DONE 日志
 DEBUG_BEHAVIOR_COUNTS="${DEBUG_BEHAVIOR_COUNTS:-true}" # 打印每文件计数和扫描模式
@@ -18,7 +19,7 @@ if [ -z "$REPO" ]; then
 fi
 
 REF="${INPUT_REF:-main}"
-CDN="${INPUT_CDN:-jsdelivr}"
+INPUT_CDN="${INPUT_CDN:-jsdelivr}"  # 仅用于示例段落，不影响链接生成
 
 owner="${REPO%/*}"
 repo="${REPO#*/}"
@@ -46,15 +47,15 @@ behavior_from_path() {
 # 2) 新法：AWK 单次扫描逐行判定（仍逐行），可限行数；可打印统计到 stderr
 decide_behavior_awk() {
   local txt="$1"
-  local max="${2:-0}"   # 0=全文件；>0=最多读前 max 行
-  local debug="${3:-false}"  # 打印计数
-  [ -f "$txt" ] || {
+  local max="${2:-0}"         # 0=全文件；>0=最多读前 max 行
+  local debug="${3:-false}"   # 打印计数
+  if [ ! -f "$txt" ]; then
     if [ "$debug" = "true" ]; then
-      echo "[AWK] source missing -> behavior=domain (scan=none)" >&2
+      printf '[AWK] source missing -> behavior=domain [scan=none]\n' >&2
     fi
-    echo "domain"
+    printf 'domain\n'
     return 0
-  }
+  fi
 
   awk -v MAX="$max" -v DEBUG="$debug" '
     function trim(s){ sub(/^[[:space:]]+/,"",s); sub(/[[:space:]]+$/,"",s); return s }
@@ -88,31 +89,32 @@ decide_behavior_awk() {
 # 3) 旧法：慢速逐行 + 多次 grep 的对照校验（可选）
 decide_behavior_slow() {
   local f="$1"
-  local n_total=0 n_domain=0 n_ip=0 n_classical=0 line
-  [ -f "$f" ] || { echo "domain"; return 0; }
+  local n_domain=0 n_ip=0 n_classical=0 line
+  if [ ! -f "$f" ]; then
+    printf 'domain\n'
+    return 0
+  fi
   while IFS= read -r line; do
     line="${line%%#*}"; line="${line%%!*}"
-    line="$(echo "$line" | sed 's/^[[:space:]]\+//; s/[[:space:]]\+$//')"
+    line="$(printf '%s' "$line" | sed 's/^[[:space:]]\+//; s/[[:space:]]\+$//')"
     [ -z "$line" ] && continue
-    n_total=$((n_total+1))
-    if echo "$line" | grep -Eq '^[A-Z-]+,.*$'; then
+    if printf '%s\n' "$line" | grep -Eq '^[A-Z-]+,.*$'; then
       n_classical=$((n_classical+1)); continue
     fi
-    if echo "$line" | grep -Eq '^([A-Za-z0-9*-]+\.)+[A-Za-z0-9-]+$|^\+\.[A-Za-z0-9.-]+$|^\*[A-Za-z0-9.-]+$'; then
+    if printf '%s\n' "$line" | grep -Eq '^([A-Za-z0-9*-]+\.)+[A-Za-z0-9-]+$|^\+\.[A-Za-z0-9.-]+$|^\*[A-Za-z0-9.-]+$'; then
       n_domain=$((n_domain+1)); continue
     fi
-    if echo "$line" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$'; then
+    if printf '%s\n' "$line" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$|^[0-9A-Fa-f:]+(/[0-9]{1,3})?$'; then
       n_ip=$((n_ip+1)); continue
     fi
   done < "$f"
 
   if [ "$n_classical" -gt 0 ] && [ "$n_classical" -ge "$n_domain" ] && [ "$n_classical" -ge "$n_ip" ]; then
-    echo classical; return
-  fi
-  if [ "$n_domain" -ge "$n_ip" ]; then
-    echo domain; return
+    printf 'classical\n'
+  elif [ "$n_domain" -ge "$n_ip" ]; then
+    printf 'domain\n'
   else
-    echo ipcidr; return
+    printf 'ipcidr\n'
   fi
 }
 
@@ -124,7 +126,7 @@ log "Start generating README for ${total} .mrs files (ref=${REF}, repo=${REPO}).
 if [ "$total" -gt 0 ]; then
   log "First entries preview:"
   for f in "${files[@]:0:5}"; do
-    echo "  - ${f#mrs-rules/}" >&2
+    printf '  - %s\n' "${f#mrs-rules/}" >&2
   done
 fi
 
@@ -151,16 +153,15 @@ work_one() {
   if [ -z "$beh" ]; then
     beh="$(decide_behavior_awk "$src" "$SNIFF_MAX" "$DEBUG_BEHAVIOR_COUNTS")"
     from="txt"
-    # 可选：旧法对照校验
     if [ "$VALIDATE_WITH_SLOW" = "true" ] && [ -f "$src" ]; then
       slow="$(decide_behavior_slow "$src")"
       if [ "$slow" != "$beh" ]; then
-        echo "[VALIDATE] MISMATCH ${rel}: awk=${beh}, slow=${slow}" >&2
+        printf '[VALIDATE] MISMATCH %s: awk=%s, slow=%s\n' "$rel" "$beh" "$slow" >&2
         if [ "$VALIDATE_FAIL_ON_MISMATCH" = "true" ]; then
           exit 99
         fi
       else
-        echo "[VALIDATE] OK ${rel}: ${beh}" >&2
+        printf '[VALIDATE] OK %s: %s\n' "$rel" "$beh" >&2
       fi
     fi
   fi
@@ -170,7 +171,7 @@ work_one() {
   if [ "$VERBOSE_PROGRESS" = "true" ]; then
     local mode="full"
     if [ "$SNIFF_MAX" != "0" ]; then mode="head:${SNIFF_MAX}"; fi
-    echo "[DONE] ${rel} -> behavior=${beh} (by ${from}, scan=${mode})" >&2
+    printf '[DONE] %s -> behavior=%s (by %s, scan=%s)\n' "$rel" "$beh" "$from" "$mode" >&2
   fi
 }
 
@@ -196,12 +197,12 @@ if [ "$total" -gt 0 ]; then
   wait "$worker_pid" || true
 fi
 
-# 统计各行为数量（从 rows.tsv 计算）
+# 统计各行为数量
 domain_count=$(awk -F'\t' '$2=="domain"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
 ipcidr_count=$(awk -F'\t' '$2=="ipcidr"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
 classical_count=$(awk -F'\t' '$2=="classical"{c++} END{print c+0}' "$rows" 2>/dev/null || echo 0)
 
-# 生成 README.md（样式优化 + 新增“名称”列）
+# 生成 README.md（样式优化 + 名称列）
 {
   echo "# MRS Rule-Providers Index"
   echo
@@ -233,12 +234,9 @@ classical_count=$(awk -F'\t' '$2=="classical"{c++} END{print c+0}' "$rows" 2>/de
     echo
     echo "| 名称 | 行为 | 策略 | 所属 | 相对路径 | jsDelivr | raw |"
     echo "| --- | --- | --- | --- | --- | --- | --- |"
-    # 稳定输出顺序
     sort -t$'\t' -k1,1 "$rows" | while IFS=$'\t' read -r rel beh; do
       path="mrs-rules/${rel}"
-      # 名称：文件名（去掉扩展名）
       base="${rel##*/}"; name="${base%.mrs}"
-      # 从路径解析策略/所属（仅当路径层级>=4 时）
       IFS='/' read -r -a parts <<< "$rel"
       policy="-" ; owner="-" ; type_seg="-"
       if [ "${#parts[@]}" -ge 4 ]; then
@@ -248,10 +246,10 @@ classical_count=$(awk -F'\t' '$2=="classical"{c++} END{print c+0}' "$rows" 2>/de
       fi
       link_js="$(cdn_url "$path")"
       link_raw="$(raw_url "$path")"
-      safe_rel="$(echo "$rel" | sed 's/|/\\|/g')"
-      safe_name="$(echo "$name" | sed 's/|/\\|/g')"
-      safe_policy="$(echo "$policy" | sed 's/|/\\|/g')"
-      safe_owner="$(echo "$owner" | sed 's/|/\\|/g')"
+      safe_rel="$(printf '%s' "$rel" | sed 's/|/\\|/g')"
+      safe_name="$(printf '%s' "$name" | sed 's/|/\\|/g')"
+      safe_policy="$(printf '%s' "$policy" | sed 's/|/\\|/g')"
+      safe_owner="$(printf '%s' "$owner" | sed 's/|/\\|/g')"
       echo "| ${safe_name} | ${beh} | ${safe_policy} | ${safe_owner} | ${safe_rel} | [jsDelivr](${link_js}) | [raw](${link_raw}) |"
     done
   fi
@@ -272,5 +270,6 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "- 文件总数：${total}"
     echo "- 行为统计：domain=${domain_count}，ipcidr=${ipcidr_count}，classical=${classical_count}"
     echo "- 并发：${MRS_JOBS}；判定：逐行 AWK（SNIFF_MAX=${SNIFF_MAX}；路径短路=${SHORTCIRCUIT_BY_PATH})"
+    echo "- 调试：DEBUG_BEHAVIOR_COUNTS=${DEBUG_BEHAVIOR_COUNTS}；VALIDATE_WITH_SLOW=${VALIDATE_WITH_SLOW}"
   } >> "$GITHUB_STEP_SUMMARY"
 fi
