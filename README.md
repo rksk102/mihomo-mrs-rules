@@ -6,7 +6,7 @@
 
 - 仓库：rksk102/mihomo-mrs-rules
 - 分支/标签：main
-- 最近更新：2025-11-14 07:01:56 CST
+- 最近更新：2025-11-15 07:02:41 CST
 - 文件总数：14（domain=12，ipcidr=2，classical=0）
 
 快速引用模板
